@@ -288,6 +288,13 @@ class IntegrityGuard(unittest.TestCase):
         self.assertIsNone(self.guard("Bash", {"command": "git push origin main"}))
         self.assertIsNone(self.guard("Bash", {"command": "rm -rf build/"}))
 
+    def test_deleting_tests_through_the_shell_asks(self):
+        self.assert_asks(self.guard("Bash", {"command": "rm tests/test_dates.py"}))
+        self.assert_asks(self.guard("Bash", {"command": "git rm src/__tests__/api.test.ts"}))
+        self.assert_asks(self.guard("Bash", {"command": "Remove-Item .\\tests\\test_api.py"}))
+        self.assertIsNone(self.guard("Bash", {"command": "pytest tests/test_dates.py"}))
+        self.assertIsNone(self.guard("Bash", {"command": "rm build/output.log"}))
+
 
 class Robustness(unittest.TestCase):
     def setUp(self):

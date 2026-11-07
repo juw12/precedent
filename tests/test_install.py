@@ -144,5 +144,90 @@ class Installer(unittest.TestCase):
         self.assertNotIn("[OpenCode]", out)
 
 
+class AgentHooks(unittest.TestCase):
+    """Codex CLI hooks.json and Gemini CLI settings.json hooks: written, runnable, removable."""
+
+    def setUp(self):
+        self.box = Sandbox()
+        h = self.box.home
+        (h / ".codex").mkdir()
+        (h / ".codex" / "hooks.json").write_text(json.dumps({"hooks": {"Stop": [
+            {"hooks": [{"type": "command", "command": "echo mine"}]}]}}), encoding="utf-8")
+        (h / ".gemini").mkdir()
+        (h / ".gemini" / "settings.json").write_text(json.dumps({"theme": "Dracula"}), encoding="utf-8")
+
+    def tearDown(self):
+        self.box.cleanup()
+
+    def install(self, *args):
+        result = subprocess.run([sys.executable, str(ROOT / "install.py"), *args], capture_output=True,
+                                text=True, encoding="utf-8", env=self.box.env(), timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return result.stdout
+
+    def config(self, *parts):
+        return json.loads(self.box.home.joinpath(*parts).read_text(encoding="utf-8"))
+
+    @staticmethod
+    def commands(hooks, event):
+        return [h["command"] for group in hooks.get(event, []) for h in group["hooks"]]
+
+    def test_codex_and_gemini_hooks_installed_idempotent_and_removed(self):
+        out = self.install("--apply", "--agents", "codex,gemini")
+        self.assertIn("/hooks", out, "tells the user to trust hooks in Codex")
+        codex = self.config(".codex", "hooks.json")["hooks"]
+        self.assertEqual(set(codex), {"Stop", "UserPromptSubmit", "PreToolUse", "PostToolUse"})
+        self.assertIn("echo mine", self.commands(codex, "Stop"))
+        self.assertTrue(any(c.endswith("stop_guard.py --agent=codex") for c in self.commands(codex, "Stop")))
+        gemini = self.config(".gemini", "settings.json")
+        self.assertEqual(gemini["theme"], "Dracula")
+        after_agent = gemini["hooks"]["AfterAgent"][0]["hooks"][0]
+        self.assertEqual(after_agent["timeout"], 15000, "Gemini timeouts are milliseconds")
+        self.assertEqual(after_agent["name"], "precedent-stop-guard")
+        self.assertEqual(gemini["hooks"]["BeforeTool"][0]["matcher"], "run_shell_command|write_file|replace")
+
+        first = (self.box.home / ".codex" / "hooks.json").read_bytes(), (self.box.home / ".gemini" / "settings.json").read_bytes()
+        self.install("--apply", "--agents", "codex,gemini")
+        second = (self.box.home / ".codex" / "hooks.json").read_bytes(), (self.box.home / ".gemini" / "settings.json").read_bytes()
+        self.assertEqual(first, second, "re-running changes nothing")
+
+        self.install("--uninstall", "--apply", "--agents", "codex,gemini")
+        self.assertEqual(self.config(".codex", "hooks.json")["hooks"], {"Stop": [{"hooks": [{"type": "command", "command": "echo mine"}]}]})
+        self.assertNotIn("hooks", self.config(".gemini", "settings.json"))
+
+    def test_installed_commands_run_in_every_available_shell(self):
+        import shutil
+
+        self.install("--apply", "--agents", "codex,gemini")
+        payload = json.dumps({"turn_id": "t", "hook_event_name": "Stop", "stop_hook_active": False,
+                              "last_assistant_message": "Sorry, I can't do that in this environment."})
+        command = next(c for c in self.commands(self.config(".codex", "hooks.json")["hooks"], "Stop") if "stop_guard" in c)
+        shells = [("default", None)]
+        for name, argv in (("bash", ["bash", "-c"]), ("powershell", ["powershell", "-NoProfile", "-Command"]),
+                           ("cmd", ["cmd", "/d", "/s", "/c"])):
+            if shutil.which(argv[0]):
+                shells.append((name, argv))
+        ran = []
+        for name, argv in shells:
+            if argv is None:
+                result = subprocess.run(command, shell=True, input=payload, capture_output=True, text=True,
+                                        encoding="utf-8", env=self.box.env(), timeout=60)
+            else:
+                result = subprocess.run(argv + [command], input=payload, capture_output=True, text=True,
+                                        encoding="utf-8", env=self.box.env(), timeout=60)
+            self.assertEqual(result.returncode, 0, f"{name}: {result.stderr}")
+            self.assertEqual(json.loads(result.stdout)["decision"], "block", f"{name}: {result.stdout!r}")
+            ran.append(name)
+        self.assertGreaterEqual(len(ran), 2, ran)
+
+
+class Demo(unittest.TestCase):
+    def test_demo_runs_and_every_scene_passes(self):
+        result = subprocess.run([sys.executable, str(ROOT / "demo.py")], capture_output=True, text=True,
+                                encoding="utf-8", timeout=120, env=dict(Sandbox().env()))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("4/4 scenes behaved as described", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

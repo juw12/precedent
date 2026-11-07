@@ -1,5 +1,43 @@
 # Changelog
 
+## 3.2.0: automatic enforcement in Codex CLI and Gemini CLI
+
+- **Hooks for Codex CLI and Gemini CLI**, not just Claude Code. The same four
+  scripts read each agent's payload and transcript (Claude JSONL, Codex
+  rollouts, Gemini recordings) and answer in its dialect: end-of-turn guard
+  (`Stop` / `AfterAgent`), "you did it before" trigger (`UserPromptSubmit` /
+  `BeforeAgent`), loop breaker (`PostToolUse` / `AfterTool`) and integrity
+  guard (`PreToolUse` / `BeforeTool`). Payload shapes taken from Codex's
+  `hooks/src/schema.rs` and Gemini's hooks reference.
+- Codex has no "ask" for tool hooks (it fails open on it), so the integrity
+  guard denies with the reason there; Claude Code still asks. Codex
+  `apply_patch` envelopes are parsed per file, including test-file deletion.
+- Installer writes `~/.codex/hooks.json` and the `hooks` block of
+  `~/.gemini/settings.json` (Gemini timeouts in ms), idempotent, clean
+  uninstall. Commands are shell-neutral and tested through cmd, PowerShell
+  and bash. Codex asks you to trust new hooks once via `/hooks`.
+- **`python demo.py`**: four scenes in a throwaway sandbox, no history needed;
+  exits non-zero if any scene misbehaves.
+- Fixes: garbled "No precedent found" text in the MCP server, stale source
+  lists that omitted Gemini CLI, server version out of sync (now one
+  `VERSION`), failure signatures redacted before they are stored.
+
+## 3.1.0: checked against real recordings
+
+- **Gemini CLI history** reader (chat recordings, `$set` re-syncs). A shell
+  command Gemini marks `success` but that printed `Exit Code: 1` is treated as
+  a failure; background commands are skipped.
+- **Codex code mode** (0.147+): reads `item_completed` CommandExecution (with
+  exit code), McpToolCall and FileChange, and skips the JavaScript `exec`
+  wrapper. Content-array outputs handled.
+- Both readers run on 21 real Codex rollouts and 36 real Gemini recordings
+  from the public cv corpus with no failed command leaking through.
+- **Invented precedent check**: `review_reply` flags a command cited on a
+  `Precedent:` line that no successful past action contains.
+- **Test deletion guard**: `rm`/`git rm`/`Remove-Item` on test files asks first.
+- README: before/after example on the first screen, honest tagline.
+- 65 automated tests.
+
 ## 3.0.0: works with every agent
 
 - **Cross-agent precedent search**: reads OpenCode's SQLite history (schema

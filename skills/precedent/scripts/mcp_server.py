@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import precedent_core as core  # noqa: E402
 
 SERVER_NAME = "precedent"
-SERVER_VERSION = "3.0.0"
+SERVER_VERSION = core.VERSION
 SUPPORTED_PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"]
 SESSION = f"mcp-{os.getpid()}"
 
@@ -42,7 +42,7 @@ TOOLS = [
         "name": "find_precedent",
         "description": (
             "Search this machine for proof a task was done before: successful tool calls from past "
-            "Claude Code, OpenCode and Codex sessions (with the task they served), shell history and "
+            "Claude Code, OpenCode, Codex and Gemini CLI sessions (with the task they served), shell history and "
             "optionally git log. Failed attempts are excluded. Use before saying you can't, or when "
             "the user says 'you did it before'."
         ),
@@ -61,7 +61,8 @@ TOOLS = [
         "name": "review_reply",
         "description": (
             "Review a draft final answer before sending. Flags a give-up without evidence (and attaches "
-            "precedent) and a success claim without a passing check after the last change."
+            "precedent), a success claim without a passing check after the last change, and a cited "
+            "precedent that does not exist in local history."
         ),
         "inputSchema": {
             "type": "object",
@@ -171,8 +172,8 @@ def tool_find_precedent(args):
             + core.format_hits(hits)
         ), False
     return (
-        f"No precedent found for: {query}. Searched Claude Code, OpenCode and Codex sessions, shell "
-        "history and git log on this machine. Do not claim to remember one; try routes that differ in kind."
+        f"No precedent found for: {query}. Searched {core.SOURCES_LABEL}. "
+        "Do not claim to remember one; try routes that differ in kind."
     ), False
 
 

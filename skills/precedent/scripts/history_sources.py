@@ -7,9 +7,14 @@
   "text" whose `message` row has role "user".
 - Codex CLI: JSONL rollouts at ~/.codex/sessions/**/rollout-*.jsonl (also
   listed in state_*.sqlite threads.rollout_path). Envelope {timestamp, type,
-  payload}; payload types message / function_call / function_call_output /
-  local_shell_call / custom_tool_call. Built from the documented format; not
-  yet checked against real rollouts.
+  payload}. Reads response_item function_call / custom_tool_call /
+  local_shell_call with their outputs, and the newer event_msg item_completed
+  items (CommandExecution with exit_code, McpToolCall, FileChange). Tested
+  against real rollouts from Codex 0.161, 0.162 and 0.163.
+- Gemini CLI: chat recordings at ~/.gemini/tmp/<project>/chats/session-*.json
+  (legacy object) and *.jsonl (append-only, with $set re-syncs). Successful
+  tool calls are gemini records' toolCalls[] with status "success". Tested
+  against real recordings from Gemini CLI 0.46 and 0.63.
 
 Every reader yields candidates in the shape precedent_core.score() expects
 and never raises: unreadable or unknown data is skipped.
@@ -245,6 +250,8 @@ def _codex_command(value):
 
 
 def _codex_output_ok(output, failure_text):
+    if isinstance(output, list):  # content-item array
+        output = "\n".join(str(part.get("text", "")) for part in output if isinstance(part, dict))
     if isinstance(output, dict):
         output = output.get("content") or output.get("output") or json.dumps(output)
     text = str(output or "")
@@ -270,12 +277,35 @@ def codex_session_candidates(path, summarize, failure_text, cwd=None):
     turns = []
     pending = {}
     first_stamp = ""
+
+    def add_use(name, tool_input, stamp):
+        if turns and name.lower() not in LOOKUP_TOOLS:
+            turns[-1][1].append({"name": name, "input": tool_input, "ts": stamp})
+
     for entry in read_jsonl(path):
         item = entry.get("payload") if isinstance(entry.get("payload"), dict) else entry
         first_stamp = first_stamp or str(entry.get("timestamp", ""))[:10]
         kind = item.get("type") or entry.get("type")
         if entry.get("type") == "session_meta" or kind == "session_meta":
-            session_cwd = item.get("cwd") or session_cwd
+            session_cwd = session_cwd or item.get("cwd") or ""
+            continue
+        if kind == "item_completed" and isinstance(item.get("item"), dict):
+            done = item["item"]
+            done_type = done.get("type")
+            stamp = entry.get("timestamp", "")
+            if done_type == "CommandExecution":
+                code = done.get("exit_code")
+                if code == 0 or (code is None and done.get("status") == "completed"):
+                    add_use("shell", {"command": _codex_command(done.get("command"))}, stamp)
+            elif done_type == "McpToolCall":
+                result = done.get("result") if isinstance(done.get("result"), dict) else {}
+                if done.get("status") == "completed" and not result.get("isError"):
+                    arguments = done.get("arguments") if isinstance(done.get("arguments"), dict) else {}
+                    add_use(f"{done.get('server')}.{done.get('tool')}", arguments, stamp)
+            elif done_type == "FileChange" and done.get("status") == "completed":
+                paths = list((done.get("changes") or {}).keys())
+                if paths:
+                    add_use("apply_patch", {"file_path": " ".join(paths)}, stamp)
             continue
         if kind == "message" and item.get("role") == "user":
             texts = [
@@ -283,10 +313,14 @@ def codex_session_candidates(path, summarize, failure_text, cwd=None):
                 if isinstance(c, dict) and c.get("type") in ("input_text", "text")
             ]
             text = "\n".join(t for t in texts if t.strip())
-            if text and not is_injected(text):
+            if text and not is_injected(text) and not (turns and turns[-1][0] == text):
                 turns.append([text, []])
             continue
         if kind in ("function_call", "local_shell_call", "custom_tool_call"):
+            # Code-mode Codex wraps every tool in a JavaScript `exec` call; its real
+            # effects arrive as item_completed CommandExecution / FileChange items.
+            if kind == "custom_tool_call" and item.get("name") == "exec":
+                continue
             if kind == "function_call":
                 name = str(item.get("name", "tool"))
                 try:
@@ -332,3 +366,146 @@ def codex_candidates(summarize, failure_text, cwd=None, deadline=None):
         if deadline is not None and time.monotonic() > deadline:
             return
         yield from codex_session_candidates(path, summarize, failure_text, cwd=cwd)
+
+
+# ---------------------------------------------------------------------------
+# Gemini CLI
+# ---------------------------------------------------------------------------
+
+
+def gemini_roots():
+    override = os.environ.get("PRECEDENT_GEMINI_HOME")
+    if override:
+        return [Path(override)]
+    home = Path.home()
+    return [home / ".gemini", home / ".cache" / ".gemini"]
+
+
+def gemini_project_paths(root):
+    """Map short project ids (tmp/<id>) to absolute paths via projects.json."""
+    mapping = {}
+    try:
+        data = json.loads((root / "projects.json").read_text(encoding="utf-8"))
+        for path, project_id in (data.get("projects") or {}).items():
+            mapping[str(project_id)] = path
+    except (OSError, ValueError, AttributeError):
+        pass
+    return mapping
+
+
+def gemini_files(max_files=60):
+    found = []
+    for root in gemini_roots():
+        tmp = root / "tmp"
+        if not tmp.is_dir():
+            continue
+        for path in tmp.glob("*/chats/session-*"):
+            name = path.name
+            if ".unreadable-" in name or ".tmp-" in name or path.suffix not in (".json", ".jsonl"):
+                continue
+            found.append((path, root))
+    found.sort(key=lambda item: item[0].stat().st_mtime, reverse=True)
+    return found[:max_files]
+
+
+def gemini_messages(path):
+    """Messages of one recording, applying $set re-syncs; tolerant of both formats."""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if path.suffix == ".json":
+        try:
+            data = json.loads(text)
+        except ValueError:
+            return []
+        return list(data.get("messages") or []) if isinstance(data, dict) else []
+    messages = []
+    for line in text.splitlines():
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        update = record.get("$set")
+        if isinstance(update, dict) and isinstance(update.get("messages"), list):
+            messages = list(update["messages"])
+        elif record.get("type") in ("user", "gemini", "model", "assistant"):
+            messages.append(record)
+    return messages
+
+
+def _gemini_text(content):
+    if isinstance(content, str):
+        return content
+    parts = content if isinstance(content, list) else []
+    return "\n".join(str(p.get("text", "")) for p in parts if isinstance(p, dict) and p.get("text"))
+
+
+def _gemini_call_ok(call):
+    """A Gemini tool call that really succeeded.
+
+    status "success" only means the tool ran: a shell command that exits 1 is
+    still "success", with "Exit Code: 1" in the response text. Background
+    commands have no known outcome and are skipped.
+    """
+    if call.get("status") != "success":
+        return False
+    texts = []
+    for part in call.get("result") or []:
+        response = (part.get("functionResponse") or {}).get("response") if isinstance(part, dict) else None
+        if isinstance(response, dict):
+            if response.get("error"):
+                return False
+            texts.append(str(response.get("output", "")))
+    text = "\n".join(texts)
+    match = re.search(r"Exit Code:\s*(-?\d+)", text)
+    if match and match.group(1) != "0":
+        return False
+    if "moved to background" in text:
+        return False
+    return True
+
+
+def gemini_session_candidates(path, root, summarize, cwd=None):
+    project_path = gemini_project_paths(root).get(path.parent.parent.name, "")
+    same_project = bool(cwd) and _norm(project_path) == _norm(cwd)
+    turns = []
+    seen_calls = set()
+    for message in gemini_messages(path):
+        kind = message.get("type")
+        if kind == "user":
+            text = _gemini_text(message.get("content"))
+            if text.strip() and not is_injected(text) and not (turns and turns[-1][0] == text):
+                turns.append([text, []])
+            continue
+        for call in message.get("toolCalls") or []:
+            if not isinstance(call, dict) or not turns or not _gemini_call_ok(call):
+                continue
+            key = call.get("id") or json.dumps(call.get("args"), sort_keys=True)
+            if key in seen_calls:
+                continue
+            seen_calls.add(key)
+            name = str(call.get("name", "tool"))
+            if name.lower() in LOOKUP_TOOLS or name in ("read_file", "read_many_files", "list_directory", "glob", "search_file_content"):
+                continue
+            args = call.get("args") if isinstance(call.get("args"), dict) else {}
+            turns[-1][1].append({"name": name, "input": args, "ts": call.get("timestamp") or message.get("timestamp", "")})
+    yield from _turn_candidates(
+        [(task, uses) for task, uses in turns if uses],
+        "Gemini CLI",
+        path.stem[-8:],
+        same_project,
+        lambda use: str(use.get("ts", ""))[:10],
+        summarize,
+    )
+
+
+def gemini_candidates(summarize, cwd=None, deadline=None):
+    import time
+
+    for path, root in gemini_files():
+        if deadline is not None and time.monotonic() > deadline:
+            return
+        try:
+            yield from gemini_session_candidates(path, root, summarize, cwd=cwd)
+        except (OSError, ValueError):
+            continue

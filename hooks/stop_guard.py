@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Stop hook: no unproven "can't", no unverified "done".
+"""End-of-turn hook (Claude Code / Codex CLI "Stop", Gemini CLI "AfterAgent").
 
+No unproven "can't", no unverified "done":
 1. A final answer that gives up without the precedent report is sent back
    once, with any matching precedent from local history attached.
 2. A final answer that claims "done" after editing files, with no check after
    the last edit (or a failing one), is sent back once to verify.
 
 Never blocks twice in a row (respects stop_hook_active) and leaves safety or
-policy refusals alone.
+policy refusals alone. {"decision": "block", "reason": ...} is understood by
+all three agents (Gemini treats "block" as an alias of "deny" = retry).
 """
 
 from _bootstrap import core, emit, run
@@ -27,17 +29,21 @@ def handle(payload):
     if payload.get("stop_hook_active"):
         return
     transcript = payload.get("transcript_path")
-    if not transcript:
+    events = core.load_events(transcript) if transcript else []
+    text = (
+        payload.get("last_assistant_message")  # Codex CLI
+        or payload.get("prompt_response")  # Gemini CLI
+        or core.last_assistant_text(events)  # Claude Code
+        or ""
+    )
+    if not text:
         return
-
-    events = core.parse_transcript(transcript)
-    text = core.last_assistant_text(events)
     turns = core.split_turns(events)
     turn = turns[-1] if turns else []
 
     if core.is_give_up(text):
-        query = core.recent_user_text(events, 3) + " " + text
-        hits = core.find_precedents(query, current_path=transcript, cwd=payload.get("cwd"), limit=4)
+        asked = core.recent_user_text(events, 3) or str(payload.get("prompt") or "")
+        hits = core.find_precedents(asked + " " + text, current_path=transcript, cwd=payload.get("cwd"), limit=4)
         emit({"decision": "block", "reason": GIVE_UP_REASON + core.precedent_block(hits)})
         return
 

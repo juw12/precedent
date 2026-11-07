@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""UserPromptSubmit hook: turns "you did it before" into actual evidence.
+"""Prompt hook (Claude Code / Codex CLI "UserPromptSubmit", Gemini CLI "BeforeAgent").
 
-When the user says the agent did this before, or pushes back ("try again",
-"you can do it"), search local history for the successful action and hand it
-to the agent, or tell it plainly that none was found so it cannot fake a memory.
+Turns "you did it before" into actual evidence: when the user says the agent
+did this before, or pushes back ("try again", "you can do it"), search local
+history for the successful action and hand it to the agent, or tell it
+plainly that none was found so it cannot fake a memory.
 """
 
-from _bootstrap import core, emit, run
+from _bootstrap import add_context, core, run
 
 CLAIM_FOUND = (
     "[precedent] The user says this was done before. Local history has possibly "
@@ -15,10 +16,10 @@ CLAIM_FOUND = (
 )
 CLAIM_NOT_FOUND = (
     "[precedent] The user says this was done before, but no matching successful "
-    "action was found in local history (Claude Code, OpenCode and Codex sessions on this "
-    "machine, shell history). Do not claim to remember it. Treat the claim as a hint that the task is "
-    "possible: name the blocker, search the workspace and your tool list, try at least "
-    "three routes that differ in kind, and verify. If still blocked, say what you searched."
+    f"action was found in local history ({core.SOURCES_LABEL}). Do not claim to remember it. "
+    "Treat the claim as a hint that the task is possible: name the blocker, search the "
+    "workspace and your tool list, try at least three routes that differ in kind, and "
+    "verify. If still blocked, say what you searched."
 )
 PUSHBACK = (
     "[precedent] The user is pushing back on a give-up. Do not repeat the same attempt. "
@@ -35,7 +36,7 @@ def handle(payload):
         return
 
     transcript = payload.get("transcript_path")
-    events = core.parse_transcript(transcript) if transcript else []
+    events = core.load_events(transcript) if transcript else []
     query = " ".join([prompt, core.recent_user_text(events, 2), core.last_assistant_text(events)])
     hits = core.find_precedents(query, current_path=transcript, cwd=payload.get("cwd"), limit=4)
 
@@ -45,13 +46,7 @@ def handle(payload):
         context = PUSHBACK
     if hits:
         context += "\n" + core.format_hits(hits)
-
-    emit({
-        "hookSpecificOutput": {
-            "hookEventName": "UserPromptSubmit",
-            "additionalContext": context,
-        }
-    })
+    add_context(payload, "UserPromptSubmit", context)
 
 
 if __name__ == "__main__":

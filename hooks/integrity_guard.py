@@ -1,24 +1,40 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: persistence must not turn into cheating or damage.
+"""Before-tool hook (Claude Code / Codex CLI "PreToolUse", Gemini CLI "BeforeTool"):
+persistence must not turn into cheating or damage.
 
-Asks the user first (never silently blocks) when the agent tries to:
-- weaken a test: add skip/xfail/only, add an always-true assertion, or remove
-  assertions;
+Stops the agent when it tries to:
+- weaken a test: add skip/xfail/only, add an always-true assertion, remove
+  assertions, or delete a test file;
 - run a destructive shortcut: force-push, --no-verify, reset --hard, broad
-  recursive deletes.
+  recursive deletes, deleting test files.
+
+Claude Code asks the user to approve. Codex CLI and Gemini CLI have no "ask"
+(Codex fails open on it), so there the call is denied with the reason; the
+agent sees it and can ask the user, who can approve by running it themselves.
 """
 
 import os
 
-from _bootstrap import core, emit, run
+from _bootstrap import agent_of, core, emit, run
+
+CLAUDE_EDITS = {"Edit", "MultiEdit", "Write"}
+GEMINI_EDITS = {"write_file", "replace"}
 
 
-def ask(reason):
+def stop(payload, reason):
+    reason = "[precedent] " + reason
+    agent = agent_of(payload)
+    if agent == "gemini":
+        emit({"decision": "deny", "reason": reason})
+        return
+    decision = "ask" if agent == "claude" else "deny"
+    if agent != "claude":
+        reason += " If the user explicitly asked for this, tell them; they can run it themselves."
     emit({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
-            "permissionDecision": "ask",
-            "permissionDecisionReason": "[precedent] " + reason,
+            "permissionDecision": decision,
+            "permissionDecisionReason": reason,
         }
     })
 
@@ -33,18 +49,30 @@ def read_existing(path, limit=1_000_000):
         return ""
 
 
-def edit_texts(tool, tool_input):
-    """Return (old_text, new_text) for an edit-style tool call."""
-    if tool == "Edit":
-        return str(tool_input.get("old_string", "")), str(tool_input.get("new_string", ""))
-    if tool == "MultiEdit":
-        edits = tool_input.get("edits") or []
-        old = "\n".join(str(e.get("old_string", "")) for e in edits if isinstance(e, dict))
-        new = "\n".join(str(e.get("new_string", "")) for e in edits if isinstance(e, dict))
-        return old, new
-    if tool == "Write":
-        return read_existing(str(tool_input.get("file_path", ""))), str(tool_input.get("content", ""))
-    return "", ""
+def file_edits(tool, tool_input):
+    """Yield (path, old_text, new_text, deleted) for any agent's edit-style call."""
+    if tool in ("Edit", "replace"):
+        yield str(tool_input.get("file_path", "")), str(tool_input.get("old_string", "")), str(tool_input.get("new_string", "")), False
+    elif tool == "MultiEdit":
+        edits = [e for e in tool_input.get("edits") or [] if isinstance(e, dict)]
+        old = "\n".join(str(e.get("old_string", "")) for e in edits)
+        new = "\n".join(str(e.get("new_string", "")) for e in edits)
+        yield str(tool_input.get("file_path", "")), old, new, False
+    elif tool in ("Write", "write_file"):
+        path = str(tool_input.get("file_path", ""))
+        yield path, read_existing(path), str(tool_input.get("content", "")), False
+    else:
+        for value in tool_input.values():
+            if isinstance(value, str) and "*** Begin Patch" in value:
+                for change in core.patch_changes(value):
+                    yield change["path"], change["old"], change["new"], change["action"] == "delete"
+
+
+def shell_command(tool_input):
+    command = tool_input.get("command", tool_input.get("cmd", ""))
+    if isinstance(command, list):
+        command = " ".join(str(part) for part in command)
+    return str(command or "")
 
 
 def handle(payload):
@@ -53,24 +81,26 @@ def handle(payload):
     if not isinstance(tool_input, dict):
         return
 
-    if tool in ("Edit", "MultiEdit", "Write"):
-        path = str(tool_input.get("file_path", ""))
+    for path, old_text, new_text, deleted in file_edits(tool, tool_input):
         if not core.is_test_path(path):
-            return
-        old_text, new_text = edit_texts(tool, tool_input)
-        issues = core.test_weakening_issues(old_text, new_text)
+            continue
+        issues = ["deletes the test file"] if deleted else core.test_weakening_issues(old_text, new_text)
         if issues:
-            ask(
+            stop(
+                payload,
                 f"This edit to {os.path.basename(path)} {', '.join(issues)}. Making a check pass by "
                 "weakening it is fake success. Approve only if you asked for this; otherwise the "
-                "code should be fixed, not the test."
+                "code should be fixed, not the test.",
             )
-        return
+            return
 
-    if tool == "Bash":
-        why = core.risky_command(str(tool_input.get("command", "")))
+    if tool in core.SHELL_TOOLS:
+        command = shell_command(tool_input)
+        if "*** Begin Patch" in command:
+            return
+        why = core.risky_command(command)
         if why:
-            ask(f"This command {why}. Persistence never justifies an irreversible shortcut; approve only if intended.")
+            stop(payload, f"This command {why}. Persistence never justifies an irreversible shortcut; approve only if intended.")
 
 
 if __name__ == "__main__":

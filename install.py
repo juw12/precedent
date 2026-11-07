@@ -28,12 +28,27 @@ MD_START = "<!-- precedent:start -->"
 MD_END = "<!-- precedent:end -->"
 TOML_START = "# precedent:start"
 TOML_END = "# precedent:end"
+# event -> (script, matcher, timeout in seconds)
 HOOK_SCRIPTS = {
     "UserPromptSubmit": ("prompt_trigger.py", None, 10),
     "PreToolUse": ("integrity_guard.py", "Edit|MultiEdit|Write|Bash", 5),
     "PostToolUse": ("failure_tracker.py", "Bash", 10),
     "PostToolUseFailure": ("failure_tracker.py", "*", 10),
     "Stop": ("stop_guard.py", None, 15),
+}
+# Codex CLI: Claude-compatible events; no matcher, the scripts filter by tool.
+CODEX_HOOK_SCRIPTS = {
+    "UserPromptSubmit": ("prompt_trigger.py", None, 10),
+    "PreToolUse": ("integrity_guard.py", None, 5),
+    "PostToolUse": ("failure_tracker.py", None, 10),
+    "Stop": ("stop_guard.py", None, 15),
+}
+# Gemini CLI: its own event names; timeouts are in milliseconds there.
+GEMINI_HOOK_SCRIPTS = {
+    "BeforeAgent": ("prompt_trigger.py", None, 10),
+    "BeforeTool": ("integrity_guard.py", "run_shell_command|write_file|replace", 5),
+    "AfterTool": ("failure_tracker.py", "run_shell_command", 10),
+    "AfterAgent": ("stop_guard.py", None, 15),
 }
 
 
@@ -219,46 +234,79 @@ def op_text_block(path, block, start, end, skip_if=None):
     return run
 
 
-def op_claude_hooks(settings):
+def shell_neutral(path):
+    """A path that bash, cmd and PowerShell all read the same way.
+
+    Forward slashes (bash eats backslashes) and no quotes unless needed
+    (PowerShell treats a leading quoted string as a value, not a command).
+    """
+    text = str(path).replace("\\", "/")
+    return f'"{text}"' if " " in text else text
+
+
+def hook_command(script, agent=None):
     hooks_dir = install_home() / "hooks"
+    if agent is None:  # Claude Code runs hooks through bash (Git Bash on Windows)
+        return f'"{python_exe()}" "{hooks_dir / script}"'
+    return f"{shell_neutral(python_exe())} {shell_neutral(hooks_dir / script)} --agent={agent}"
+
+
+def op_hooks(settings, table, agent=None, timeout_ms=False, named=False):
+    """Register precedent's hook scripts in an agent's JSON hook config.
+
+    Same file layout for Claude Code (settings.json), Codex CLI (hooks.json)
+    and Gemini CLI (settings.json): {"hooks": {Event: [{matcher?, hooks: [...]}]}}.
+    Only entries whose command points into precedent's install dir are touched.
+    """
+    hooks_dir = install_home() / "hooks"
+    markers = (str(hooks_dir), str(hooks_dir).replace("\\", "/"))
 
     def ours(hook):
-        return str(hooks_dir) in str(hook.get("command", ""))
+        return any(marker in str(hook.get("command", "")) for marker in markers)
 
     def run(apply, remove):
         data, problem = load_json(settings)
         if problem:
             return f"SKIP {settings}: {problem}"
         hooks = data.setdefault("hooks", {})
-        changed = False
-        for event, (script, matcher, timeout) in HOOK_SCRIPTS.items():
-            groups = hooks.get(event, [])
+        if not isinstance(hooks, dict):
+            return f"SKIP {settings}: unexpected hooks structure"
+        before = json.dumps(hooks, sort_keys=True)
+        found = False
+        for event, (script, matcher, timeout) in table.items():
             kept = []
-            for group in groups:
+            for group in hooks.get(event, []):
                 inner = [h for h in group.get("hooks", []) if not ours(h)]
-                if len(inner) != len(group.get("hooks", [])):
-                    changed = True
+                found = found or len(inner) != len(group.get("hooks", []))
                 if inner:
                     kept.append(dict(group, hooks=inner))
             if not remove:
-                command = f'"{python_exe()}" "{hooks_dir / script}"'
-                group = {"hooks": [{"type": "command", "command": command, "timeout": timeout}]}
+                command = hook_command(script, agent)
+                handler = {"type": "command", "command": command, "timeout": timeout * 1000 if timeout_ms else timeout}
+                if named:
+                    handler["name"] = "precedent-" + script[:-3].replace("_", "-")
+                group = {"hooks": [handler]}
                 if matcher:
                     group["matcher"] = matcher
                 kept.append(group)
-                changed = True
             if kept:
                 hooks[event] = kept
             elif event in hooks:
                 del hooks[event]
         if not hooks:
             data.pop("hooks", None)
-        if remove and not changed:
+        if remove and not found:
             return f"not present: hooks in {settings}"
+        if not remove and json.dumps(data.get("hooks", {}), sort_keys=True) == before:
+            return f"already set: hooks in {settings}"
         if apply:
             write_json(settings, data)
         return f"{'remove' if remove else 'set'} hooks in {settings}"
     return run
+
+
+def op_claude_hooks(settings):
+    return op_hooks(settings, HOOK_SCRIPTS)
 
 
 def mcp_stdio():
@@ -313,6 +361,7 @@ def agents():
                 op_skill(codex / "skills" / "precedent"),
                 op_text_block(codex / "AGENTS.md", rules_block, MD_START, MD_END),
                 op_text_block(codex / "config.toml", codex_toml_block, TOML_START, TOML_END, skip_if="[mcp_servers.precedent]"),
+                op_hooks(codex / "hooks.json", CODEX_HOOK_SCRIPTS, agent="codex"),
             ],
         },
         {
@@ -337,6 +386,7 @@ def agents():
                 op_skill(h / ".gemini" / "skills" / "precedent"),
                 op_text_block(h / ".gemini" / "GEMINI.md", rules_block, MD_START, MD_END),
                 op_json_entry(h / ".gemini" / "settings.json", ["mcpServers", "precedent"], mcp_stdio),
+                op_hooks(h / ".gemini" / "settings.json", GEMINI_HOOK_SCRIPTS, agent="gemini", timeout_ms=True, named=True),
             ],
         },
         {
@@ -405,7 +455,9 @@ def main():
             for op in agent["ops"]:
                 print(f"  {verb}: {op(args.apply, False)}")
     if args.apply and not args.uninstall:
-        print("\nRestart your agents to load the MCP server and rules. Backups end in .precedent-bak.")
+        print("\nRestart your agents to load the MCP server, rules and hooks. Backups end in .precedent-bak.")
+        if any(agent["id"] == "codex" for agent in detected):
+            print("Codex CLI asks you to trust new hooks once: run /hooks inside Codex and approve the precedent ones.")
     return 0
 
 

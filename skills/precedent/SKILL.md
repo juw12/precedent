@@ -1,9 +1,9 @@
 ---
 name: precedent
-description: Stops premature "I can't do this" give-ups without faking success, in any AI agent. Before declaring a task impossible, the agent finds real precedent (the command that worked before, from past Claude Code, OpenCode or Codex sessions, shell history, git, the project or docs), climbs a ladder of genuinely different routes, and verifies the result with a real check. Use when the agent is about to say it cannot, is stuck or looping on one failing approach, wants to hand work back to the user, is about to claim "done" without checking, or when the user says "you did it before", "you can do this", "try again", "don't give up" or /precedent. Not for safety, legal or permission refusals.
+description: Stops premature "I can't do this" give-ups without faking success, in any AI agent. Before declaring a task impossible, the agent finds real precedent (the command that worked before, from past Claude Code, OpenCode, Codex or Gemini CLI sessions, shell history, git, the project or docs), climbs a ladder of genuinely different routes, and verifies the result with a real check. Use when the agent is about to say it cannot, is stuck or looping on one failing approach, wants to hand work back to the user, is about to claim "done" without checking, or when the user says "you did it before", "you can do this", "try again", "don't give up" or /precedent. Not for safety, legal or permission refusals.
 license: MIT
 metadata:
-  version: "3.0.0"
+  version: "3.2.0"
 ---
 
 # Precedent
@@ -55,7 +55,7 @@ Quote the exact error or observation. "It doesn't work" is not a blocker;
 ### 2. Search for precedent (in order; stop when found)
 
 1. **Run the precedent finder.** It searches successful tool calls from past
-   Claude Code, OpenCode and Codex sessions (with the task each one served),
+   Claude Code, OpenCode, Codex and Gemini CLI sessions (with the task each one served),
    shell history and git log on this machine. Failed attempts are excluded.
    - If the `precedent` MCP tools are available, call `find_precedent`.
    - Otherwise, with a shell:
@@ -158,7 +158,9 @@ Treat it as a strong hint that the task is possible, **not** as proof.
 
 - **Any MCP agent** (Cursor, Codex, OpenCode, Gemini CLI, Claude Desktop/Code,
   VS Code, Windsurf): the `precedent` MCP server provides the tools above.
-- **Claude Code**: hooks also enforce it automatically. They attach real
-  precedent when the user says "you did it before", send back give-ups that skip
-  the loop and "done" claims with no check after the last edit, flag same-error
-  loops, and ask before test-weakening edits or destructive commands.
+- **Claude Code, Codex CLI and Gemini CLI**: hooks also enforce it
+  automatically. They attach real precedent when the user says "you did it
+  before", send back give-ups that skip the loop and "done" claims with no check
+  after the last edit, flag same-error loops, and stop test-weakening edits or
+  destructive commands (Claude Code asks you; Codex and Gemini deny with the
+  reason, since they have no "ask").

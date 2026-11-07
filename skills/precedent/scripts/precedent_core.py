@@ -12,6 +12,11 @@ import tempfile
 import time
 from pathlib import Path
 
+VERSION = "3.2.0"
+SOURCES_LABEL = (
+    "Claude Code, Codex CLI, Gemini CLI and OpenCode sessions, shell history and git log on this machine"
+)
+
 # ---------------------------------------------------------------------------
 # Text signals
 # ---------------------------------------------------------------------------
@@ -101,7 +106,13 @@ def is_done_claim(text):
 # Transcripts (Claude Code JSONL)
 # ---------------------------------------------------------------------------
 
-EDIT_TOOLS = {"Edit", "MultiEdit", "Write", "NotebookEdit"}
+EDIT_TOOLS = {
+    "Edit", "MultiEdit", "Write", "NotebookEdit",  # Claude Code
+    "apply_patch",  # Codex CLI
+    "write_file", "replace",  # Gemini CLI
+    "edit", "write", "patch",  # OpenCode
+}
+SHELL_TOOLS = {"Bash", "shell", "local_shell", "exec_command", "run_shell_command", "bash"}
 LOOKUP_TOOLS = {"Read", "Glob", "Grep", "LS", "TodoWrite", "Task", "TaskCreate", "ExitPlanMode"}
 LOOKUP_TOOLS_LOWER = {"read", "glob", "grep", "ls", "list", "todowrite", "todoread", "task", "skill"}
 NOISE_PREFIXES = ("<command-", "<local-command", "Caveat:", "[Request interrupted", "<system-reminder")
@@ -212,6 +223,191 @@ def _attach_results(events):
         failed = result.get("is_error") or bool(FAILURE_TEXT.search(text[:1500]))
         event["ok"] = not failed
         event["result"] = text
+
+
+# ---------------------------------------------------------------------------
+# Other agents' live transcripts (Codex CLI rollouts, Gemini CLI recordings)
+# ---------------------------------------------------------------------------
+
+GEMINI_EVENTS = {"BeforeAgent", "AfterAgent", "BeforeTool", "AfterTool", "BeforeModel", "AfterModel"}
+CODEX_ROLLOUT_TYPES = {"session_meta", "response_item", "event_msg", "turn_context", "compacted"}
+
+
+def detect_agent(payload, argv=()):
+    """Which agent is calling a hook: explicit --agent=..., else inferred from the payload."""
+    for arg in argv:
+        if str(arg).startswith("--agent="):
+            return str(arg).split("=", 1)[1].strip().lower()
+    if str(payload.get("hook_event_name", "")) in GEMINI_EVENTS:
+        return "gemini"
+    if "turn_id" in payload:
+        return "codex"
+    return "claude"
+
+
+def transcript_format(path):
+    """Return "claude", "codex" or "gemini" for a transcript file."""
+    if str(path).endswith(".json"):
+        return "gemini"
+    for index, entry in enumerate(read_jsonl(path, max_bytes=200_000)):
+        if "$set" in entry or (entry.get("type") in ("gemini", "model") and "message" not in entry):
+            return "gemini"
+        if entry.get("type") in CODEX_ROLLOUT_TYPES and isinstance(entry.get("payload"), dict):
+            return "codex"
+        if isinstance(entry.get("message"), dict):
+            return "claude"
+        if index > 40:
+            break
+    return "claude"
+
+
+def load_events(path):
+    """Events (same shape as parse_transcript) from any supported agent's transcript."""
+    if not path or not os.path.isfile(str(path)):
+        return []
+    try:
+        kind = transcript_format(path)
+        if kind == "codex":
+            return parse_codex_events(path)
+        if kind == "gemini":
+            return parse_gemini_events(path)
+        return parse_transcript(path)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return []
+
+
+def _tool_event(call_id, name, tool_input, ok, result="", stamp=""):
+    return {
+        "kind": "tool_use",
+        "id": call_id,
+        "name": name,
+        "input": tool_input if isinstance(tool_input, dict) else {"input": str(tool_input)},
+        "ok": ok,
+        "result": result,
+        "ts": stamp,
+    }
+
+
+def parse_codex_events(path):
+    import history_sources as sources
+
+    events = []
+    pending = {}
+    for entry in read_jsonl(path):
+        item = entry.get("payload") if isinstance(entry.get("payload"), dict) else entry
+        kind = item.get("type")
+        stamp = entry.get("timestamp", "")
+        if kind == "message":
+            role = item.get("role")
+            texts = [
+                str(c.get("text", "")) for c in item.get("content") or []
+                if isinstance(c, dict) and c.get("type") in ("input_text", "output_text", "text")
+            ]
+            text = "\n".join(t for t in texts if t.strip())
+            if not text:
+                continue
+            if role == "user" and not sources.is_injected(text):
+                events.append({"kind": "user_text", "text": text, "ts": stamp})
+            elif role == "assistant":
+                events.append({"kind": "assistant_text", "text": text, "ts": stamp})
+        elif kind == "item_completed" and isinstance(item.get("item"), dict):
+            done = item["item"]
+            done_type = done.get("type")
+            if done_type == "CommandExecution":
+                code = done.get("exit_code")
+                ok = code == 0 or (code is None and done.get("status") == "completed")
+                command = sources._codex_command(done.get("command"))
+                events.append(_tool_event(done.get("id"), "shell", {"command": command}, ok, str(done.get("aggregated_output", "")), stamp))
+            elif done_type == "FileChange":
+                paths = " ".join((done.get("changes") or {}).keys())
+                events.append(_tool_event(done.get("id"), "apply_patch", {"file_path": paths}, done.get("status") == "completed", "", stamp))
+            elif done_type == "McpToolCall":
+                result = done.get("result") if isinstance(done.get("result"), dict) else {}
+                ok = done.get("status") == "completed" and not result.get("isError")
+                events.append(_tool_event(done.get("id"), f"{done.get('server')}.{done.get('tool')}", done.get("arguments") or {}, ok, "", stamp))
+        elif kind in ("function_call", "local_shell_call", "custom_tool_call"):
+            if kind == "custom_tool_call" and item.get("name") == "exec":
+                continue
+            name = "shell" if kind == "local_shell_call" else str(item.get("name", "tool"))
+            if kind == "function_call":
+                try:
+                    tool_input = json.loads(item.get("arguments") or "{}")
+                except ValueError:
+                    tool_input = {"input": str(item.get("arguments"))}
+            elif kind == "local_shell_call":
+                tool_input = dict(item.get("action") or {})
+            else:
+                tool_input = {"input": str(item.get("input", ""))}
+            if isinstance(tool_input, dict) and "command" in tool_input:
+                tool_input["command"] = sources._codex_command(tool_input["command"])
+            event = _tool_event(item.get("call_id") or item.get("id"), name, tool_input, None, "", stamp)
+            events.append(event)
+            if event["id"]:
+                pending[event["id"]] = event
+        elif kind in ("function_call_output", "custom_tool_call_output", "local_shell_call_output"):
+            event = pending.pop(item.get("call_id") or item.get("id"), None)
+            if event is not None:
+                output = item.get("output")
+                event["ok"] = sources._codex_output_ok(output, FAILURE_TEXT)
+                event["result"] = output if isinstance(output, str) else json.dumps(output)[:4000]
+    return events
+
+
+def parse_gemini_events(path):
+    import history_sources as sources
+
+    events = []
+    seen = set()
+    for message in sources.gemini_messages(Path(path)):
+        kind = message.get("type")
+        stamp = message.get("timestamp", "")
+        text = sources._gemini_text(message.get("content"))
+        if kind == "user":
+            if text.strip() and not sources.is_injected(text):
+                events.append({"kind": "user_text", "text": text, "ts": stamp})
+            continue
+        for call in message.get("toolCalls") or []:
+            if not isinstance(call, dict):
+                continue
+            key = call.get("id") or json.dumps(call.get("args"), sort_keys=True)
+            if key in seen:
+                continue
+            seen.add(key)
+            events.append(_tool_event(
+                key, str(call.get("name", "tool")), call.get("args") or {},
+                sources._gemini_call_ok(call), "", call.get("timestamp") or stamp,
+            ))
+        if text.strip():
+            events.append({"kind": "assistant_text", "text": text, "ts": stamp})
+    return events
+
+
+PATCH_FILE = re.compile(r"^\*\*\* (Add|Update|Delete) File: (.+?)\s*$")
+
+
+def patch_changes(patch_text):
+    """Split an apply_patch envelope into [{action, path, old, new}] per file."""
+    changes = []
+    current = None
+    for line in str(patch_text or "").splitlines():
+        header = PATCH_FILE.match(line)
+        if header:
+            current = {"action": header.group(1).lower(), "path": header.group(2), "old": [], "new": []}
+            changes.append(current)
+            continue
+        if current is None or line.startswith("***") or line.startswith("@@"):
+            continue
+        if line.startswith("-"):
+            current["old"].append(line[1:])
+        elif line.startswith("+"):
+            current["new"].append(line[1:])
+        elif line.startswith(" "):
+            current["old"].append(line[1:])
+            current["new"].append(line[1:])
+    for change in changes:
+        change["old"] = "\n".join(change["old"])
+        change["new"] = "\n".join(change["new"])
+    return changes
 
 
 def split_turns(events):
@@ -522,7 +718,7 @@ def find_precedents(query, current_path=None, cwd=None, limit=5, include_shell=T
                     include_git=False, all_projects=True, time_budget=4.0, agents=None):
     """Rank successful past actions that match the query, across agents.
 
-    agents: optional set of {"claude-code", "opencode", "codex"} to search;
+    agents: optional set of {"claude-code", "opencode", "codex", "gemini"} to search;
     default is all of them.
     """
     import history_sources
@@ -530,7 +726,7 @@ def find_precedents(query, current_path=None, cwd=None, limit=5, include_shell=T
     query_tokens = tokens(query)
     if not query_tokens:
         return []
-    wanted = set(agents) if agents else {"claude-code", "opencode", "codex"}
+    wanted = set(agents) if agents else {"claude-code", "opencode", "codex", "gemini"}
     deadline = time.monotonic() + time_budget
     current_resolved = Path(current_path).resolve() if current_path else None
     pool = []
@@ -554,6 +750,12 @@ def find_precedents(query, current_path=None, cwd=None, limit=5, include_shell=T
     if "codex" in wanted and time.monotonic() < deadline:
         try:
             collect(history_sources.codex_candidates(summarize_input, FAILURE_TEXT, cwd=cwd, deadline=deadline))
+        except Exception:
+            pass
+
+    if "gemini" in wanted and time.monotonic() < deadline:
+        try:
+            collect(history_sources.gemini_candidates(summarize_input, cwd=cwd, deadline=deadline))
         except Exception:
             pass
 
@@ -609,14 +811,20 @@ def precedent_block(hits):
             + format_hits(hits)
         )
     return (
-        "\n\nNo matching precedent was found in local history (Claude Code, OpenCode and Codex sessions, "
-        "shell history). "
+        f"\n\nNo matching precedent was found in local history ({SOURCES_LABEL}). "
         "Do not claim to remember one."
     )
 
 
 def review_reply(draft, edited_since_last_check=False, last_check="none", cwd=None):
     """Agent-agnostic review of a draft final answer. Returns (verdict, message)."""
+    missing = cited_precedent_missing(draft, cwd=cwd)
+    if missing:
+        return "revise", (
+            "This reply cites precedent that is not in local history: "
+            + ", ".join(f"`{m}`" for m in missing)
+            + ". Do not cite a past run you cannot show. If it came from docs or the web, cite that source instead."
+        )
     if is_give_up(draft):
         hits = find_precedents(draft, cwd=cwd, limit=4)
         return "revise", (
@@ -635,6 +843,26 @@ def review_reply(draft, edited_since_last_check=False, last_check="none", cwd=No
     return "ok", "No problems found. Send it."
 
 
+PRECEDENT_LINE = re.compile(r"^\s*\**Precedent:\**(.*)$", re.IGNORECASE | re.MULTILINE)
+BACKTICKED = re.compile(r"`([^`]{4,300})`")
+
+
+def cited_precedent_missing(draft, cwd=None):
+    """Backticked commands on a 'Precedent:' line that no successful past action contains."""
+    cited = []
+    for line in PRECEDENT_LINE.findall(draft or ""):
+        cited.extend(c.strip() for c in BACKTICKED.findall(line))
+    if not cited:
+        return []
+    missing = []
+    for command in cited:
+        hits = find_precedents(command, cwd=cwd, limit=10)
+        wanted = " ".join(command.lower().split())
+        if not any(wanted in " ".join(h["summary"].lower().split()) for h in hits):
+            missing.append(command)
+    return missing
+
+
 # ---------------------------------------------------------------------------
 # Failure tracking
 # ---------------------------------------------------------------------------
@@ -646,21 +874,34 @@ def tool_failure(event_name, payload):
         error = payload.get("error") or payload.get("tool_response") or ""
         return True, error if isinstance(error, str) else json.dumps(error)[:2000]
     response = payload.get("tool_response")
+    is_shell = payload.get("tool_name") in SHELL_TOOLS
     if isinstance(response, dict):
         code = response.get("exit_code", response.get("exitCode", response.get("returncode")))
         flagged = response.get("is_error") or response.get("isError") or response.get("error")
         if flagged or (isinstance(code, int) and code != 0):
             text = response.get("stderr") or response.get("error") or response.get("stdout") or ""
-            return True, str(text)
+            return True, text if isinstance(text, str) else json.dumps(text)[:2000]
+        # Gemini CLI reports shell exit codes inside the text it returns to the model.
+        text = response.get("llmContent") or response.get("output") or response.get("returnDisplay")
+        if isinstance(text, str) and _nonzero_exit(text):
+            return True, text
         return False, ""
-    if isinstance(response, str) and payload.get("tool_name") == "Bash":
-        if FAILURE_TEXT.search(response[:3000]):
+    if isinstance(response, str) and is_shell:
+        if _nonzero_exit(response) or FAILURE_TEXT.search(response[:3000]):
             return True, response
     return False, ""
 
 
+EXIT_CODE_TEXT = re.compile(r"\bExit code:?\s*(-?\d+)", re.IGNORECASE)
+
+
+def _nonzero_exit(text):
+    match = EXIT_CODE_TEXT.search(text[:4000])
+    return bool(match) and match.group(1) != "0"
+
+
 def failure_signature(tool_name, error_text):
-    lines = [l.strip() for l in str(error_text).splitlines() if l.strip()]
+    lines = [l.strip() for l in redact(str(error_text)).splitlines() if l.strip()]
     key_line = next((l for l in reversed(lines) if re.search(r"error|exception|denied|not found|failed", l, re.I)), "")
     if not key_line and lines:
         key_line = lines[-1]
@@ -764,6 +1005,13 @@ RISKY_COMMANDS = [
     (re.compile(r"\bgit\s+clean\s+-[a-zA-Z]*f"), "deletes untracked files"),
     (re.compile(r"\brm\s+-[a-zA-Z]*r[a-zA-Z]*\s+(?:/|~|\*|\.)(?:\s|$)"), "recursive delete of a broad path"),
     (re.compile(r"\bchmod\s+-R\s+777\b"), "opens permissions on everything"),
+    (
+        re.compile(
+            r"\b(?:rm|del|git\s+rm|Remove-Item)\b[^|;&]*(?:\btests?[\\/]|__tests__|_test\.\w+|\.test\.\w+|\.spec\.\w+|\btest_\w+\.py)",
+            re.IGNORECASE,
+        ),
+        "deletes test files (making a check disappear is not making it pass)",
+    ),
 ]
 
 

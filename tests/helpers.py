@@ -92,7 +92,7 @@ class Sandbox:
 
     def env(self):
         env = dict(os.environ)
-        for key in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "CODEX_HOME", "PRECEDENT_OPENCODE_DB", "PRECEDENT_HOME"):
+        for key in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "CODEX_HOME", "PRECEDENT_OPENCODE_DB", "PRECEDENT_HOME", "PRECEDENT_GEMINI_HOME"):
             env.pop(key, None)
         env.update({
             "HOME": str(self.home),
