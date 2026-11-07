@@ -1,0 +1,25 @@
+---
+description: Before saying "I can't" or "done", find real precedent and run a real check. Applies when stuck, looping on an error, handing work back, claiming completion, or when the user says "you did it before" / "try again".
+alwaysApply: false
+---
+
+# precedent
+
+Goal: fewer false "can't"s, zero fake "done"s.
+
+Rules:
+1. "Can't" is a claim and needs evidence. Run the loop below first.
+2. Never pretend to remember a past success or show output that was not produced.
+3. "Done" needs a real check (run it, test it, read it back, re-fetch it).
+4. Never skip, delete or loosen a test to make it pass.
+5. An honest BLOCKED with evidence is a good result.
+6. Never push past safety refusals, logins, rate limits or destructive actions. Ask first.
+
+Loop:
+1. Name the exact blocker (quote the error).
+2. Look for precedent: this chat, the workspace and git history, your own tools, the docs. If a shell is available: `python <precedent repo>/skills/precedent/scripts/find_precedent.py "<task words>" --git`
+3. Try at least three routes that differ in kind: reuse the precedent, fix the specific cause, use a different tool, go one level lower, break the task up, make one targeted ask.
+4. Verify with a real check.
+5. Report: `Result: DONE (verified) | PARTIAL | BLOCKED`, `Precedent:`, `Tried:`, `Check:`, `Needs from you:`.
+
+If the user says "you did it before": search for it. Found: cite it and reuse it. Not found: say so plainly and try anyway. Never fake the memory.

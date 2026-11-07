@@ -1,0 +1,16 @@
+{
+  "name": "precedent",
+  "metadata": {
+    "description": "Single-plugin marketplace for precedent."
+  },
+  "owner": {
+    "name": "Juwen Lie"
+  },
+  "plugins": [
+    {
+      "name": "precedent",
+      "description": "Fewer false \"I can't\"s, zero fake \"done\"s. Finds real precedent before giving up and requires a real check before claiming done.",
+      "source": "./"
+    }
+  ]
+}

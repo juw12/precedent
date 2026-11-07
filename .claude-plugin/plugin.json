@@ -1,0 +1,19 @@
+{
+  "name": "precedent",
+  "version": "2.0.0",
+  "description": "Fewer false \"I can't\"s, zero fake \"done\"s. Finds the command that worked last time before the agent gives up, blocks unverified 'done' claims, breaks same-error loops, and guards against test-weakening. Local only.",
+  "author": {
+    "name": "Juwen Lie"
+  },
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "skill",
+    "hooks",
+    "persistence",
+    "anti-give-up",
+    "verification",
+    "precedent"
+  ]
+}

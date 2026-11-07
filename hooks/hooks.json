@@ -1,0 +1,63 @@
+{
+  "description": "precedent: real precedent before any 'can't', a real check before any 'done'. Local only, no network, no telemetry. Set PRECEDENT_OFF=1 to disable.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/prompt_trigger.py\" 2>/dev/null || python \"${CLAUDE_PLUGIN_ROOT}/hooks/prompt_trigger.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|MultiEdit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/integrity_guard.py\" 2>/dev/null || python \"${CLAUDE_PLUGIN_ROOT}/hooks/integrity_guard.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/failure_tracker.py\" 2>/dev/null || python \"${CLAUDE_PLUGIN_ROOT}/hooks/failure_tracker.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/failure_tracker.py\" 2>/dev/null || python \"${CLAUDE_PLUGIN_ROOT}/hooks/failure_tracker.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/stop_guard.py\" 2>/dev/null || python \"${CLAUDE_PLUGIN_ROOT}/hooks/stop_guard.py\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
