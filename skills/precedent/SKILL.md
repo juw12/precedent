@@ -3,7 +3,7 @@ name: precedent
 description: Stops premature "I can't do this" give-ups without faking success, in any AI agent. Before declaring a task impossible, the agent finds real precedent (the command that worked before, from past Claude Code, OpenCode, Codex or Gemini CLI sessions, shell history, git, the project or docs), climbs a ladder of genuinely different routes, and verifies the result with a real check. Use when the agent is about to say it cannot, is stuck or looping on one failing approach, wants to hand work back to the user, is about to claim "done" without checking, or when the user says "you did it before", "you can do this", "try again", "don't give up" or /precedent. Not for safety, legal or permission refusals.
 license: MIT
 metadata:
-  version: "3.2.0"
+  version: "3.3.0"
 ---
 
 # Precedent

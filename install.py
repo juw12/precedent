@@ -12,8 +12,8 @@ what precedent added.
     python install.py --uninstall --apply  # remove everything precedent added
     python install.py --list               # which agents were detected
 
-Agents: Claude Code, Claude Desktop, Codex CLI, OpenCode, Gemini CLI, Cursor,
-Windsurf, VS Code. Standard library only.
+Agents: Claude Code, Claude Desktop, Codex CLI, OpenCode, Gemini CLI, GitHub
+Copilot CLI, Cursor, Windsurf, VS Code. Standard library only.
 """
 
 import argparse
@@ -160,15 +160,26 @@ def op_payload():
     return run
 
 
+SKILL_MARKER = ".installed-by-precedent"
+
+
 def op_skill(dest):
+    """Copy the skill folder. A marker file records that the folder is ours.
+
+    If a different skill already uses this folder name (for example another tool's
+    own "precedent" skill), it is never overwritten or deleted.
+    """
     def run(apply, remove):
+        ours = (dest / SKILL_MARKER).is_file()
+        occupied = dest.exists() and any(dest.iterdir()) if dest.is_dir() else dest.exists()
         if remove:
-            skill_file = dest / "SKILL.md"
-            if not skill_file.is_file() or "name: precedent" not in skill_file.read_text(encoding="utf-8", errors="replace"):
-                return f"skill not installed at {dest}"
+            if not ours:
+                return f"left alone (not installed by precedent): {dest}" if occupied else f"skill not installed at {dest}"
             if apply:
                 shutil.rmtree(dest, ignore_errors=True)
             return f"remove skill {dest}"
+        if occupied and not ours:
+            return f"SKIP {dest}: another skill already uses this folder; left untouched (MCP, rules and hooks still install)"
         if apply:
             shutil.copytree(
                 REPO / "skills" / "precedent",
@@ -176,8 +187,62 @@ def op_skill(dest):
                 dirs_exist_ok=True,
                 ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
             )
+            (dest / SKILL_MARKER).write_text("Installed by precedent's install.py; --uninstall removes this folder.\n", encoding="utf-8")
         return f"skill -> {dest}"
     return run
+
+
+def op_owned_file(path, build):
+    """A config file precedent owns outright (e.g. ~/.copilot/hooks/precedent.json)."""
+    def run(apply, remove):
+        exists = path.is_file()
+        ours = exists and "precedent" in path.read_text(encoding="utf-8", errors="replace")
+        if remove:
+            if not ours:
+                return f"not present: {path}"
+            if apply:
+                path.unlink()
+                if path.parent.name == "precedent" and not any(path.parent.iterdir()):
+                    path.parent.rmdir()
+            return f"remove {path}"
+        if exists and not ours:
+            return f"SKIP {path}: exists and is not precedent's"
+        content = build()
+        if exists and path.read_text(encoding="utf-8") == content:
+            return f"already set: {path}"
+        if apply:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        return f"write {path}"
+    return run
+
+
+def opencode_plugin_files(plugins_dir):
+    """OpenCode auto-loads every folder in ~/.config/opencode/plugins/ through its package.json.
+
+    The folder holds a two-line shim that re-exports the real plugin from the payload
+    (~/.precedent/platforms/opencode/precedent.js), so updates only touch the payload.
+    """
+    plugin_js = install_home() / "platforms" / "opencode" / "precedent.js"
+    package = {
+        "name": "precedent-opencode",
+        "private": True,
+        "type": "module",
+        "description": "precedent: blocks test weakening and destructive shortcuts, sends back give-ups and unchecked 'done's",
+        "exports": {".": "./index.js"},
+    }
+    shim = (
+        "// Installed by precedent's install.py. The plugin itself lives in the payload folder.\n"
+        f"export {{ default }} from {json.dumps(plugin_js.as_uri())};\n"
+    )
+    config = {"python": python_exe(), "hooks": str(install_home() / "hooks"),
+              "rules": str(install_home() / "platforms" / "rules" / "precedent-rules.md")}
+    return [
+        op_owned_file(install_home() / "platforms" / "opencode" / "precedent.config.json",
+                      lambda: json.dumps(config, indent=2) + "\n"),
+        op_owned_file(plugins_dir / "precedent" / "package.json", lambda: json.dumps(package, indent=2) + "\n"),
+        op_owned_file(plugins_dir / "precedent" / "index.js", lambda: shim),
+    ]
 
 
 def op_json_entry(path, keys, value_factory):
@@ -309,6 +374,28 @@ def op_claude_hooks(settings):
     return op_hooks(settings, HOOK_SCRIPTS)
 
 
+COPILOT_HOOK_SCRIPTS = {
+    "PreToolUse": ("integrity_guard.py", 10),
+    "PostToolUse": ("failure_tracker.py", 10),
+    "PostToolUseFailure": ("failure_tracker.py", 10),
+    "Stop": ("stop_guard.py", 20),
+}
+
+
+def copilot_hooks_json():
+    hooks_dir = install_home() / "hooks"
+    hooks = {
+        event: [{
+            "type": "command",
+            "exec": python_exe(),
+            "args": [str(hooks_dir / script), "--agent=copilot"],
+            "timeoutSec": timeout,
+        }]
+        for event, (script, timeout) in COPILOT_HOOK_SCRIPTS.items()
+    }
+    return json.dumps({"version": 1, "_comment": "precedent hooks; remove with install.py --uninstall", "hooks": hooks}, indent=2) + "\n"
+
+
 def mcp_stdio():
     return {"command": python_exe(), "args": [str(server_path())]}
 
@@ -336,11 +423,13 @@ def agents():
     opencode = xdg_config() / "opencode"
     vscode_user = app_config_dir("Code") / "User"
     claude_desktop = app_config_dir("Claude")
+    copilot = Path(os.environ.get("COPILOT_HOME") or h / ".copilot")
     return [
         {
             "id": "claude-code",
             "name": "Claude Code",
-            "detect": h / ".claude",
+            "detect": [h / ".claude" / "settings.json", h / ".claude" / "projects", h / ".claude.json"],
+            "cli": "claude",
             "ops": [
                 op_skill(h / ".claude" / "skills" / "precedent"),
                 op_json_entry(h / ".claude.json", ["mcpServers", "precedent"], lambda: dict(type="stdio", **mcp_stdio())),
@@ -350,13 +439,14 @@ def agents():
         {
             "id": "claude-desktop",
             "name": "Claude Desktop",
-            "detect": claude_desktop,
+            "detect": [claude_desktop / "claude_desktop_config.json"],
             "ops": [op_json_entry(claude_desktop / "claude_desktop_config.json", ["mcpServers", "precedent"], mcp_stdio)],
         },
         {
             "id": "codex",
             "name": "Codex CLI",
-            "detect": codex,
+            "detect": [codex / "config.toml", codex / "sessions", codex / "hooks.json", codex / "installation_id"],
+            "cli": "codex",
             "ops": [
                 op_skill(codex / "skills" / "precedent"),
                 op_text_block(codex / "AGENTS.md", rules_block, MD_START, MD_END),
@@ -367,7 +457,8 @@ def agents():
         {
             "id": "opencode",
             "name": "OpenCode",
-            "detect": opencode,
+            "detect": [opencode / "opencode.json", opencode / "opencode.jsonc"],
+            "cli": "opencode",
             "ops": [
                 op_skill(opencode / "skills" / "precedent"),
                 op_text_block(opencode / "AGENTS.md", rules_block, MD_START, MD_END),
@@ -376,12 +467,14 @@ def agents():
                     ["mcp", "precedent"],
                     lambda: {"type": "local", "command": [python_exe(), str(server_path())], "enabled": True},
                 ),
+                *opencode_plugin_files(opencode / "plugins"),
             ],
         },
         {
             "id": "gemini",
             "name": "Gemini CLI",
-            "detect": h / ".gemini",
+            "detect": [h / ".gemini" / "settings.json", h / ".gemini" / "tmp"],
+            "cli": "gemini",
             "ops": [
                 op_skill(h / ".gemini" / "skills" / "precedent"),
                 op_text_block(h / ".gemini" / "GEMINI.md", rules_block, MD_START, MD_END),
@@ -390,24 +483,49 @@ def agents():
             ],
         },
         {
+            "id": "copilot",
+            "name": "GitHub Copilot CLI",
+            "detect": [copilot / "config.json", copilot / "settings.json", copilot / "session-state"],
+            "cli": "copilot",
+            "ops": [
+                op_skill(copilot / "skills" / "precedent"),
+                op_json_entry(copilot / "mcp-config.json", ["mcpServers", "precedent"], lambda: dict(type="local", tools=["*"], **mcp_stdio())),
+                op_owned_file(copilot / "hooks" / "precedent.json", copilot_hooks_json),
+            ],
+        },
+        {
             "id": "cursor",
             "name": "Cursor",
-            "detect": h / ".cursor",
+            "detect": [h / ".cursor"],
             "ops": [op_json_entry(h / ".cursor" / "mcp.json", ["mcpServers", "precedent"], mcp_stdio)],
         },
         {
             "id": "windsurf",
             "name": "Windsurf",
-            "detect": h / ".codeium" / "windsurf",
+            "detect": [h / ".codeium" / "windsurf"],
             "ops": [op_json_entry(h / ".codeium" / "windsurf" / "mcp_config.json", ["mcpServers", "precedent"], mcp_stdio)],
         },
         {
             "id": "vscode",
             "name": "VS Code (Copilot agent)",
-            "detect": vscode_user,
+            "detect": [vscode_user],
             "ops": [op_json_entry(vscode_user / "mcp.json", ["servers", "precedent"], lambda: dict(type="stdio", **mcp_stdio()))],
         },
     ]
+
+
+def why_present(agent):
+    """Evidence that an agent is really installed: its CLI on PATH or a file it creates."""
+    if agent.get("cli") and shutil.which(agent["cli"]):
+        return f"{agent['cli']} on PATH"
+    for path in agent["detect"]:
+        if path.exists():
+            return str(path)
+    return ""
+
+
+def is_present(agent):
+    return bool(why_present(agent))
 
 
 def main():
@@ -426,11 +544,11 @@ def main():
             print(f"Unknown agent id(s): {', '.join(sorted(unknown))}")
             return 2
 
-    detected = [a for a in all_agents if a["detect"].exists() and (not selected or a["id"] in selected)]
+    detected = [a for a in all_agents if is_present(a) and (not selected or a["id"] in selected)]
     if args.list:
         for agent in all_agents:
-            state = "found" if agent["detect"].exists() else "-"
-            print(f"{state:6} {agent['id']:15} {agent['name']}  ({agent['detect']})")
+            state = "found" if is_present(agent) else "-"
+            print(f"{state:6} {agent['id']:15} {agent['name']}  ({why_present(agent) or 'not found'})")
         return 0
     if not detected:
         print("No supported agents found. Use the skill folder or platforms/ files manually.")

@@ -1,6 +1,6 @@
 {
   "name": "precedent",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "Stop false \"I can't\"s and unchecked \"done\"s in every AI agent. Finds the command that worked last time (Claude Code, OpenCode, Codex, Gemini CLI history) before the agent gives up, blocks unverified 'done' claims and invented precedents, breaks same-error loops, and guards against test-weakening. MCP server + automatic hooks for Claude Code, Codex CLI and Gemini CLI. Local only.",
   "author": {
     "name": "Juwen Lie"

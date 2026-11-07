@@ -12,15 +12,16 @@ policy refusals alone. {"decision": "block", "reason": ...} is understood by
 all three agents (Gemini treats "block" as an alias of "deny" = retry).
 """
 
-from _bootstrap import core, emit, run
+from _bootstrap import core, emit, events_for, run
 
 GIVE_UP_REASON = (
     "Precedent check: your answer gives up without evidence. Before stopping: "
     "(1) name the exact blocker; (2) look for precedent in this conversation, the "
     "workspace, your tool list and the docs (the matches below are a start); "
     "(3) try at least three routes that differ in kind; (4) verify any success "
-    "with a real check. Never invent a past success or fake output. If it is still "
-    "blocked, answer with: Result / Precedent / Tried / Check / Needs from you. "
+    "with a real check. Never invent a past success or fake output. "
+    + core.ACCESS_BOUNDARY
+    + " If it is still blocked, answer with: Result / Precedent / Tried / Check / Needs from you. "
     "If this was a safety, legal or policy refusal, keep it and simply stop."
 )
 
@@ -29,7 +30,7 @@ def handle(payload):
     if payload.get("stop_hook_active"):
         return
     transcript = payload.get("transcript_path")
-    events = core.load_events(transcript) if transcript else []
+    events = events_for(payload)
     text = (
         payload.get("last_assistant_message")  # Codex CLI
         or payload.get("prompt_response")  # Gemini CLI

@@ -229,5 +229,89 @@ class Demo(unittest.TestCase):
         self.assertIn("4/4 scenes behaved as described", result.stdout)
 
 
+class ForeignSkills(unittest.TestCase):
+    """Another tool's skill with the same folder name is never overwritten or deleted."""
+
+    def setUp(self):
+        self.box = Sandbox()
+        h = self.box.home
+        (h / ".config" / "opencode").mkdir(parents=True)
+        (h / ".config" / "opencode" / "opencode.json").write_text("{}", encoding="utf-8")
+        self.foreign = h / ".config" / "opencode" / "skills" / "precedent"
+        self.foreign.mkdir(parents=True)
+        (self.foreign / "SKILL.md").write_text("---\nname: precedent\ndescription: someone else's autopilot\n---\n", encoding="utf-8")
+        (self.foreign / "profile.md").write_text("mine", encoding="utf-8")
+
+    def tearDown(self):
+        self.box.cleanup()
+
+    def install(self, *args):
+        result = subprocess.run([sys.executable, str(ROOT / "install.py"), *args], capture_output=True, text=True,
+                                encoding="utf-8", env=self.box.env(), timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return result.stdout
+
+    def test_install_and_uninstall_leave_foreign_skill_alone(self):
+        before = snapshot(self.foreign)
+        out = self.install("--apply", "--agents", "opencode")
+        self.assertIn("another skill already uses this folder", out)
+        self.assertEqual(snapshot(self.foreign), before)
+        self.install("--uninstall", "--apply", "--agents", "opencode")
+        self.assertEqual(snapshot(self.foreign), before)
+
+    def test_folder_alone_is_not_an_agent(self):
+        h = self.box.home
+        (h / ".gemini" / "skills" / "precedent").mkdir(parents=True)
+        env = self.box.env()
+        env["PATH"] = ""
+        result = subprocess.run([sys.executable, str(ROOT / "install.py"), "--list"], capture_output=True, text=True,
+                                encoding="utf-8", env=env, timeout=60)
+        gemini_line = next(line for line in result.stdout.splitlines() if " gemini " in line)
+        self.assertTrue(gemini_line.startswith("-"), gemini_line)
+
+
+class OpenCodePlugin(unittest.TestCase):
+    """OpenCode gets an auto-loaded plugin folder whose shim points at the payload copy."""
+
+    def setUp(self):
+        self.box = Sandbox()
+        h = self.box.home
+        (h / ".config" / "opencode").mkdir(parents=True)
+        (h / ".config" / "opencode" / "opencode.json").write_text("{}", encoding="utf-8")
+        self.plugin_dir = h / ".config" / "opencode" / "plugins" / "precedent"
+
+    def tearDown(self):
+        self.box.cleanup()
+
+    def install(self, *args):
+        result = subprocess.run([sys.executable, str(ROOT / "install.py"), *args], capture_output=True, text=True,
+                                encoding="utf-8", env=self.box.env(), timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return result.stdout
+
+    def test_plugin_installed_points_at_payload_and_is_removed(self):
+        self.install("--apply", "--agents", "opencode")
+        package = json.loads((self.plugin_dir / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(package["exports"]["."], "./index.js")
+        shim = (self.plugin_dir / "index.js").read_text(encoding="utf-8")
+        payload_js = self.box.home / ".precedent" / "platforms" / "opencode" / "precedent.js"
+        self.assertTrue(payload_js.is_file())
+        self.assertIn(payload_js.as_uri(), shim)
+        config = json.loads(payload_js.with_name("precedent.config.json").read_text(encoding="utf-8"))
+        self.assertTrue(Path(config["hooks"], "integrity_guard.py").is_file())
+        self.assertTrue(Path(config["rules"]).is_file())
+        self.install("--uninstall", "--apply", "--agents", "opencode")
+        self.assertFalse(self.plugin_dir.exists())
+
+    def test_plugin_is_a_v2_default_export_with_classic_fallback(self):
+        source = (ROOT / "platforms" / "opencode" / "precedent.js").read_text(encoding="utf-8")
+        self.assertIn('export default { id: "precedent", setup, server: PrecedentPlugin }', source)
+        named_exports = [line for line in source.splitlines() if line.startswith("export ") and "default" not in line]
+        self.assertEqual(named_exports, [], "classic loaders call every named export as a plugin")
+        for hook in ('ctx.tool.hook("execute.before"', 'ctx.tool.hook("execute.after"',
+                     'ctx.session.hook("context"', 'ctx.session.hook("prompt"', "session.execution.succeeded"):
+            self.assertIn(hook, source)
+
+
 if __name__ == "__main__":
     unittest.main()

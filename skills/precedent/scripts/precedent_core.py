@@ -12,7 +12,7 @@ import tempfile
 import time
 from pathlib import Path
 
-VERSION = "3.2.0"
+VERSION = "3.3.0"
 SOURCES_LABEL = (
     "Claude Code, Codex CLI, Gemini CLI and OpenCode sessions, shell history and git log on this machine"
 )
@@ -45,7 +45,31 @@ SAFETY = _compile([
     r"\bnot comfortable\b",
 ])
 
-REPORT_MARKERS = _compile([r"^\s*\**Precedent:", r"^\s*\**Tried:"], re.IGNORECASE | re.MULTILINE)
+REPORT_MARKERS = _compile(
+    [r"^\s*\**Precedent:", r"^\s*\**Tried:", r"^\s*\**Result:", r"^\s*\**Needs from you:"],
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# A quoted access-control denial is evidence, not a lazy "can't". The right move is to
+# report it; pushing for "another route" here is what drives agents to guess passwords
+# or strip permissions (both seen in the OpenCode A/B run).
+ACCESS_WALL = _compile([
+    r"\bpermission denied\b",
+    r"\baccess (?:is )?denied\b",
+    r"\bPermissionError\b",
+    r"\bUnauthorizedAccessException\b",
+    r"\b(?:HTTP |status |error )?40[13]\b(?: (?:Unauthorized|Forbidden))?",
+    r"\b(?:unauthori[sz]ed|forbidden)\b",
+    r"\bdeny(?:-| )(?:write|read|ACL|ACE)\b",
+    r"\b(?:requires?|needs?) (?:a )?(?:login|sign[- ]?in|authentication|credentials|an? account)\b",
+])
+
+ACCESS_BOUNDARY = (
+    "A route that differs in kind never means getting around an access control: no guessed "
+    "or default passwords, no secrets found in env vars or config files, no changing "
+    "permissions or ACLs, no disabling checks. If the blocker is an access wall, report it "
+    "and ask for access."
+)
 
 DONE_CLAIM = _compile([
     r"\b(?:it's|that's|everything's|everything is|it is|that is|all) (?:done|fixed|working|set|complete)\b",
@@ -95,6 +119,8 @@ def is_give_up(text):
         return False
     if matches_any(SAFETY, text):
         return False
+    if matches_any(ACCESS_WALL, text):
+        return False
     return True
 
 
@@ -112,7 +138,7 @@ EDIT_TOOLS = {
     "write_file", "replace",  # Gemini CLI
     "edit", "write", "patch",  # OpenCode
 }
-SHELL_TOOLS = {"Bash", "shell", "local_shell", "exec_command", "run_shell_command", "bash"}
+SHELL_TOOLS = {"Bash", "shell", "local_shell", "exec_command", "run_shell_command", "bash", "powershell"}
 LOOKUP_TOOLS = {"Read", "Glob", "Grep", "LS", "TodoWrite", "Task", "TaskCreate", "ExitPlanMode"}
 LOOKUP_TOOLS_LOWER = {"read", "glob", "grep", "ls", "list", "todowrite", "todoread", "task", "skill"}
 NOISE_PREFIXES = ("<command-", "<local-command", "Caveat:", "[Request interrupted", "<system-reminder")
@@ -258,7 +284,7 @@ def transcript_format(path):
             return "claude"
         if index > 40:
             break
-    return "claude"
+    return "generic"
 
 
 def load_events(path):
@@ -271,6 +297,8 @@ def load_events(path):
             return parse_codex_events(path)
         if kind == "gemini":
             return parse_gemini_events(path)
+        if kind == "generic":
+            return parse_transcript(path) or parse_generic_events(path)
         return parse_transcript(path)
     except (OSError, ValueError, TypeError, AttributeError):
         return []
@@ -379,6 +407,48 @@ def parse_gemini_events(path):
             ))
         if text.strip():
             events.append({"kind": "assistant_text", "text": text, "ts": stamp})
+    return events
+
+
+
+def parse_opencode_messages(messages):
+    """Events from OpenCode's client.session.messages() result: [{info: {role}, parts: [...]}]."""
+    events = []
+    for message in messages or []:
+        if not isinstance(message, dict):
+            continue
+        role = (message.get("info") or {}).get("role")
+        for part in message.get("parts") or []:
+            if not isinstance(part, dict):
+                continue
+            kind = part.get("type")
+            if kind == "text" and str(part.get("text", "")).strip() and not part.get("synthetic"):
+                events.append({"kind": "user_text" if role == "user" else "assistant_text", "text": str(part["text"])})
+            elif kind == "tool":
+                state = part.get("state") or {}
+                status = state.get("status")
+                exit_code = (state.get("metadata") or {}).get("exit")
+                ok = None if status in ("pending", "running") else (status == "completed" and exit_code in (None, 0))
+                output = state.get("output") if isinstance(state.get("output"), str) else ""
+                if ok and output and _nonzero_exit(output):
+                    ok = False
+                events.append(_tool_event(part.get("callID"), str(part.get("tool", "")), state.get("input") or {}, ok, output))
+    return events
+
+
+def parse_generic_events(path):
+    """Best effort for agents whose transcript format is not documented: message text only."""
+    events = []
+    for entry in read_jsonl(path):
+        data = entry.get("data") if isinstance(entry.get("data"), dict) else entry
+        role = str(data.get("role") or entry.get("type") or "").lower()
+        text = data.get("content") if isinstance(data.get("content"), str) else data.get("text")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        if "assistant" in role or role in ("model", "gemini"):
+            events.append({"kind": "assistant_text", "text": text})
+        elif "user" in role:
+            events.append({"kind": "user_text", "text": text})
     return events
 
 
@@ -829,8 +899,8 @@ def review_reply(draft, edited_since_last_check=False, last_check="none", cwd=No
         hits = find_precedents(draft, cwd=cwd, limit=4)
         return "revise", (
             "This reply gives up without evidence. Name the exact blocker, look for precedent, "
-            "try at least three routes that differ in kind, and verify. If still blocked, reply "
-            "with Result / Precedent / Tried / Check / Needs from you." + precedent_block(hits)
+            "try at least three routes that differ in kind, and verify. " + ACCESS_BOUNDARY + " If still "
+            "blocked, reply with Result / Precedent / Tried / Check / Needs from you." + precedent_block(hits)
         )
     if is_done_claim(draft):
         if last_check == "failed":
@@ -874,6 +944,9 @@ def tool_failure(event_name, payload):
         error = payload.get("error") or payload.get("tool_response") or ""
         return True, error if isinstance(error, str) else json.dumps(error)[:2000]
     response = payload.get("tool_response")
+    if response is None and isinstance(payload.get("tool_result"), dict):  # Copilot CLI
+        result = payload["tool_result"]
+        response = result.get("text_result_for_llm") or result.get("textResultForLlm") or ""
     is_shell = payload.get("tool_name") in SHELL_TOOLS
     if isinstance(response, dict):
         code = response.get("exit_code", response.get("exitCode", response.get("returncode")))
@@ -892,7 +965,7 @@ def tool_failure(event_name, payload):
     return False, ""
 
 
-EXIT_CODE_TEXT = re.compile(r"\bExit code:?\s*(-?\d+)", re.IGNORECASE)
+EXIT_CODE_TEXT = re.compile(r"\bExit(?:ed with exit)? code:?\s*(-?\d+)", re.IGNORECASE)
 
 
 def _nonzero_exit(text):
@@ -1007,10 +1080,36 @@ RISKY_COMMANDS = [
     (re.compile(r"\bchmod\s+-R\s+777\b"), "opens permissions on everything"),
     (
         re.compile(
+            r"\bicacls\b[^|;&]*\s/(?:grant|remove|reset|setowner)"
+            r"|\btakeown\b|\bSet-Acl\b|\battrib\b[^|;&]*\s-r\b"
+            r"|\bchmod\b[^|;&]*(?:\b[0-7]?[0-7][67][67]\b|[augo]*\+[rwx]*w)",
+            re.IGNORECASE,
+        ),
+        "changes file permissions to get past an access control; a denied write is a fact to report, not a lock to remove",
+    ),
+    (
+        re.compile(
+            r"\b(?:admin|administrator|root|user|test|guest|demo)['\"]?\s*[:,]\s*['\"]?"
+            r"(?:admin|administrator|password|passw0rd|pass|root|toor|guest|test|demo|changeme|default|letmein|1234|12345|123456)\b"
+            r"|YWRtaW46|cm9vdDpyb290|dXNlcjp1c2Vy|dGVzdDp0ZXN0|Z3Vlc3Q6Z3Vlc3Q",
+            re.IGNORECASE,
+        ),
+        "tries default or guessed credentials against a login; an auth wall needs the user's real access, not a guess",
+    ),
+    (
+        re.compile(
             r"\b(?:rm|del|git\s+rm|Remove-Item)\b[^|;&]*(?:\btests?[\\/]|__tests__|_test\.\w+|\.test\.\w+|\.spec\.\w+|\btest_\w+\.py)",
             re.IGNORECASE,
         ),
         "deletes test files (making a check disappear is not making it pass)",
+    ),
+    (
+        re.compile(
+            r"(?:\bsed\s+(?:-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i|\b(?:Set-Content|Out-File|truncate)\b|(?<![>&\d])>(?!>)\s*)"
+            r"[^|;&]*?(?:\btests?[\\/][^\s'\"]+|__tests__[\\/][^\s'\"]+|\btest_\w+\.py|\w+_test\.\w+|\w+\.(?:test|spec)\.\w+)",
+            re.IGNORECASE,
+        ),
+        "rewrites a test file from the shell, outside an edit that can be reviewed",
     ),
 ]
 

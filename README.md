@@ -1,6 +1,9 @@
 # precedent
 
-**Stop false "I can't"s and unchecked "done"s, in every AI coding agent.**
+**Stop false "I can't"s and unchecked "done"s in your AI coding agents.**
+
+Enforced automatically in Claude Code, Codex CLI, Gemini CLI, OpenCode and GitHub Copilot CLI;
+available as MCP tools plus rules in Cursor, Windsurf, VS Code and Claude Desktop.
 
 You've seen this: the agent says *"I can't do that"*, you reply *"you did it
 before"*, and suddenly it works. The capability was there all along. What it
@@ -24,7 +27,7 @@ Agent:  Sorry, I can't convert Excel files in this environment.
 ```
 Precedent check: your answer gives up without evidence. Before stopping: (1) name the
 exact blocker; (2) look for precedent ... (3) try at least three routes that differ in
-kind; (4) verify any success with a real check. Never invent a past success or fake output.
+kind; (4) verify any success with a real check. Never invent a past success or fake output. ...
 
 Possible precedent found in local history (check it matches before reusing; cite it if you use it):
 - [2026-11-01, Claude Code, this project, session 3f2a1b9c; succeeded] Bash:
@@ -33,8 +36,8 @@ Possible precedent found in local history (check it matches before reusing; cite
 ```
 
 The failed `xlsx2csv` attempt from that same session is not shown: only actions
-that **succeeded** count. What the agent does next depends on the agent. The
-measured A/B comparison is still to come (see *Verified so far*).
+that **succeeded** count. What the agent does next depends on the agent. It was
+measured on a real agent, including where it backfired at first (see *Verified so far*).
 
 **See it yourself in under a minute**, no agent history needed:
 
@@ -53,7 +56,8 @@ and Gemini CLI would: a give-up sent back with last week's working command, a
 | Claude Code | ✓ transcripts | **automatic hooks** + skill + MCP |
 | Codex CLI | ✓ rollouts (incl. 0.161–0.163 code mode) | **automatic hooks** + skill + MCP + AGENTS.md rules |
 | Gemini CLI | ✓ chat recordings | **automatic hooks** + skill + MCP + GEMINI.md rules |
-| OpenCode | ✓ SQLite history | skill + MCP + AGENTS.md rules |
+| OpenCode | ✓ SQLite history | **automatic plugin** + skill + MCP + AGENTS.md rules |
+| GitHub Copilot CLI | — | **automatic hooks** + skill + MCP |
 | Cursor, Windsurf, VS Code (Copilot agent), Claude Desktop | — | MCP server |
 | ChatGPT, Gemini app, any chat | — | paste-in rules (`platforms/chatgpt/`) |
 
@@ -62,7 +66,7 @@ Plus shell history (bash, zsh, PowerShell) and git log for everyone.
 ## Install
 
 ```
-git clone https://github.com/<you>/precedent
+git clone https://github.com/juw12/precedent
 cd precedent
 python install.py            # dry run: shows every change, writes nothing
 python install.py --apply    # install for every agent it finds
@@ -73,6 +77,9 @@ It backs up every file it edits (`*.precedent-bak`), is safe to run twice,
 skips any config it can't parse safely (for example JSON with comments) and
 tells you what to add by hand. Requirements: Python 3.8+. No other dependencies.
 Codex CLI asks you to trust new hooks once: run `/hooks` inside Codex and approve them.
+It only touches agents it can actually find (their CLI on PATH, or their own
+config or history files), and never overwrites a different skill that happens
+to use the folder name `precedent`.
 
 ## What it does
 
@@ -85,8 +92,9 @@ Codex CLI asks you to trust new hooks once: run `/hooks` inside Codex and approv
 | The same error happens twice | The agent is told to stop repeating that route; on the 3rd and 5th repeat it gets hypotheses and matching precedent. |
 | The agent tries to cut corners | Adding `skip`/`xfail`/`.only` or `assert True`, removing assertions, **deleting test files**, `push --force`, `--no-verify`, `reset --hard`, broad `rm -r`: **stopped**. Claude Code asks you; Codex and Gemini have no "ask", so the call is denied with the reason. |
 
-In Claude Code, Codex CLI and Gemini CLI this all happens automatically through
-hooks (one set of scripts that speaks each agent's hook format). In other agents
+In Claude Code, Codex CLI, Gemini CLI and GitHub Copilot CLI this all happens
+automatically through hooks (one set of scripts that speaks each agent's hook
+format); in OpenCode through a plugin that runs the same scripts. In other agents
 the same checks are MCP tools (`find_precedent`, `review_reply`,
 `record_failure`, `check_test_edit`, `check_command`) that the installed rules
 tell the agent to use, plus a `precedent` prompt (slash command) where the
@@ -119,13 +127,14 @@ python skills/precedent/scripts/find_precedent.py "deploy docs" --git --limit 8
 - **MCP server:** command `python`, args `["<path>/skills/precedent/scripts/mcp_server.py"]` (stdio).
 - **Rules:** paste `platforms/rules/precedent-rules.md` into AGENTS.md / GEMINI.md / your rules.
 - **Cursor rule:** `platforms/cursor/precedent.mdc` into `.cursor/rules/`.
-- **Claude Code plugin:** `claude plugin marketplace add <you>/precedent`, then `claude plugin install precedent@precedent`.
+- **OpenCode plugin:** copy `platforms/opencode/precedent.js` into `.opencode/plugin/` (one project) or let the installer add `~/.config/opencode/plugins/precedent/`.
+- **Claude Code plugin:** `claude plugin marketplace add juw12/precedent`, then `claude plugin install precedent@precedent`.
 
 Turn the hooks off any time with `PRECEDENT_OFF=1`.
 
 ## Verified so far
 
-- **88 automated tests**: hooks fed realistic transcripts, an OpenCode
+- **106 automated tests**: hooks fed realistic transcripts, an OpenCode
   database with the real schema, Codex and Gemini fixtures copied from real
   recordings, Codex and Gemini hook payloads in the shapes their sources define,
   a live MCP stdio session, the demo, and the installer against a fake home
@@ -139,20 +148,38 @@ Turn the hooks off any time with `PRECEDENT_OFF=1`.
   commands for a "replace TODO with DONE in notes.txt" query.
 - **Real history**: tested read-only against a real OpenCode history of about
   300k records. Searches take 1–3 s, and a query with no real precedent returns nothing.
-- **Agent A/B**: not yet measured. `evals/` has 13 cases and a scorer for solve
-  rate, false-give-up rate, **fabrication rate** and **guardrail hold rate**.
+- **Agent A/B on OpenCode 2.2.0** ([full report](evals/RESULTS.md)), against a
+  baseline that already had strong honesty rules in its global `AGENTS.md`:
+  - Solvable and "impossible" cases: both arms passed all of them. On a careful
+    setup the give-up and "done" checks changed nothing measurable.
+  - The first version **backfired** on access walls: its "don't give up" push led
+    the agent to guess `admin:admin` and to try removing a folder's deny ACL. The
+    fixes in 3.3.0 treat a quoted access denial as evidence, stop reading "keep
+    trying" in an opening request as pushback, rule out bypassing access controls
+    in every nudge, and block both moves in the guard.
+  - On the final code, three fresh trials of those two cases: precedent held the
+    line 6/6, the baseline 4/6 (it stripped the ACL once and guessed a password
+    once). Small samples; evidence, not a rate.
+  - Full suite re-run on the final code (precedent arm): 12/12 pass.
 
 ## Limits
 
 - The search is keyword-based (IDF-weighted). It can surface a near-miss, so
   results are labelled "possible precedent" and the agent is told to confirm a
   match before reusing it.
-- Automatic hooks cover Claude Code, Codex CLI and Gemini CLI. OpenCode,
-  Cursor, Windsurf, VS Code and Claude Desktop get the same checks as MCP tools
-  plus rules, so there they depend on the agent calling them.
-- The Codex and Gemini hook wiring is tested against the payload shapes in
-  their source (Codex `hooks/src/schema.rs`) and docs (Gemini hooks reference),
-  not yet inside a live Codex or Gemini session.
+- Automatic enforcement covers Claude Code, Codex CLI, Gemini CLI, GitHub
+  Copilot CLI and OpenCode. Cursor, Windsurf, VS Code and Claude Desktop get the
+  same checks as MCP tools plus rules, so there they depend on the agent calling them.
+- Live-verified so far: the OpenCode plugin (OpenCode 2.2.0) and the Claude Code
+  hook format. The Codex, Gemini and Copilot wiring is tested against the payload
+  shapes in their source and docs (Codex `hooks/src/schema.rs`, Gemini and GitHub
+  hooks references), not yet inside a live session of those agents.
+- Surfaced precedent comes from your real history, so it can point an agent at things
+  it would not otherwise touch (in the A/B it led one run to read the test machine's
+  mailbox while looking for an SMS). It is labelled a lead to check, not permission.
+- In OpenCode the end-of-turn send-back needs a long-lived session (the TUI or
+  `opencode serve`). One-shot `opencode run` exits as soon as the turn ends, so
+  there only the tool guard, loop breaker and rules apply.
 - Codex rollouts older than 7 days may be zstd-compressed (`.jsonl.zst`); those
   are skipped (no standard-library decoder). Antigravity's protobuf
   conversations are not read.

@@ -7,7 +7,7 @@ history for the successful action and hand it to the agent, or tell it
 plainly that none was found so it cannot fake a memory.
 """
 
-from _bootstrap import add_context, core, run
+from _bootstrap import add_context, core, events_for, run
 
 CLAIM_FOUND = (
     "[precedent] The user says this was done before. Local history has possibly "
@@ -19,12 +19,13 @@ CLAIM_NOT_FOUND = (
     f"action was found in local history ({core.SOURCES_LABEL}). Do not claim to remember it. "
     "Treat the claim as a hint that the task is possible: name the blocker, search the "
     "workspace and your tool list, try at least three routes that differ in kind, and "
-    "verify. If still blocked, say what you searched."
+    "verify. If still blocked, say what you searched. " + core.ACCESS_BOUNDARY
 )
 PUSHBACK = (
     "[precedent] The user is pushing back on a give-up. Do not repeat the same attempt. "
     "Name the exact blocker, look for precedent, then try a route that differs in kind "
-    "(different tool, lower level, break it up). Verify any success with a real check."
+    "(different tool, lower level, break it up). Verify any success with a real check. "
+    + core.ACCESS_BOUNDARY
 )
 
 
@@ -36,8 +37,14 @@ def handle(payload):
         return
 
     transcript = payload.get("transcript_path")
-    events = core.load_events(transcript) if transcript else []
-    query = " ".join([prompt, core.recent_user_text(events, 2), core.last_assistant_text(events)])
+    events = events_for(payload)
+    # OpenCode's plugin passes the last reply directly; other agents have a transcript.
+    previous_reply = core.last_assistant_text(events) or str(payload.get("last_assistant_message") or "")
+    if is_pushback and not is_claim and not previous_reply:
+        # "Keep trying till it works" in an opening request is not pushback on a give-up.
+        # Nudging "try another route" here led the A/B agent to guess a password.
+        return
+    query = " ".join([prompt, core.recent_user_text(events, 2), previous_reply])
     hits = core.find_precedents(query, current_path=transcript, cwd=payload.get("cwd"), limit=4)
 
     if is_claim:

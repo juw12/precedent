@@ -14,6 +14,10 @@
   Precedent, Tried 1-3, Check, Needs from you.
 - Never push past safety refusals, logins, rate limits or destructive actions
   (force-push, reset --hard, broad deletes). Ask first.
+- An access wall (login, 401/403, permission denied) is a blocker to report, not a
+  puzzle to solve. "Try another route" never means: guessing or default passwords,
+  trying secrets you found in env vars, config files or other tools' settings,
+  changing permissions or ACLs, or disabling a check. Ask for access.
 - If the `precedent` MCP tools are available, use them: `find_precedent` before
   any "can't" and when the user says you did it before; `review_reply` on your
   draft final answer; `record_failure` after a failed command; `check_test_edit`

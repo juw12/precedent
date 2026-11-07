@@ -10,7 +10,7 @@ Silent otherwise. Successful tools never reset the count: a passing `ls` is
 not evidence the task works.
 """
 
-from _bootstrap import add_context, core, run
+from _bootstrap import add_context, core, events_for, run
 
 
 def handle(payload):
@@ -27,7 +27,7 @@ def handle(payload):
 
     if repeats >= 3 or total in (4, 8):
         transcript = payload.get("transcript_path")
-        events = core.load_events(transcript) if transcript else []
+        events = events_for(payload)
         query = " ".join([str(error_text)[:400], core.recent_user_text(events, 2)])
         hits = core.find_precedents(query, current_path=transcript, cwd=payload.get("cwd"), limit=3)
         if hits:

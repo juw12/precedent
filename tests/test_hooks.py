@@ -184,8 +184,26 @@ class PromptTrigger(unittest.TestCase):
         self.assertIsNone(out)
 
     def test_pushback_triggers(self):
-        _, out, _ = self.box.run_hook("prompt_trigger.py", {"prompt": "try again, don't give up"})
-        self.assertIn("pushing back", out["hookSpecificOutput"]["additionalContext"])
+        current = (
+            Transcript()
+            .user("export the chart as svg")
+            .say("I can't export SVG from here.")
+            .write(self.box.session("current-6666"))
+        )
+        _, out, _ = self.box.run_hook("prompt_trigger.py", {
+            "prompt": "try again, don't give up",
+            "transcript_path": current,
+        })
+        context = out["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("pushing back", context)
+        self.assertIn("never means getting around an access control", context)
+
+    def test_keep_trying_in_the_opening_request_is_not_pushback(self):
+        # Found by the OpenCode A/B run: this nudge on a first prompt led to a guessed password.
+        _, out, _ = self.box.run_hook("prompt_trigger.py", {
+            "prompt": "Get the data from the members-only dashboard, just keep trying till it works.",
+        })
+        self.assertIsNone(out)
 
 
 class FailureTracker(unittest.TestCase):

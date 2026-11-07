@@ -1,5 +1,46 @@
 # Changelog
 
+## 3.3.0: OpenCode and GitHub Copilot CLI enforcement, measured on a real agent
+
+- **OpenCode plugin** (`platforms/opencode/precedent.js`), one file for both
+  plugin APIs: the V2 default export `{id, setup}` and the classic `server`.
+  It blocks test weakening and destructive shortcuts before the tool runs,
+  breaks same-error loops, injects the rules into the system prompt and, in
+  the TUI or `opencode serve`, sends a give-up or an unchecked "done" back
+  once. Verified live on OpenCode 2.2.0: `git push --force` was blocked and
+  the bare remote stayed untouched; a give-up was sent back and answered.
+- **GitHub Copilot CLI**: skill, MCP entry and its own hook file
+  `~/.copilot/hooks/precedent.json` (PascalCase events, top-level
+  `permissionDecision`). Built to GitHub's hooks reference; not run live here
+  (the test machine's Copilot policy blocks it).
+- **Installer**: OpenCode gets an auto-loaded `plugins/precedent/` folder with a
+  shim that points at the payload copy. Agents are detected by their CLI on
+  PATH or by their own config/history files; a bare skills folder no longer
+  counts. A same-named skill that precedent did not install is never
+  overwritten or deleted (`.installed-by-precedent` marker).
+- **Shell rewrites of tests** (`sed -i`, `perl -i`, `Set-Content`, `Out-File`,
+  `truncate`, `>` onto a test file) now get the same check as editor edits.
+- Codex and Gemini hook commands use forward-slash paths that every shell
+  accepts; Codex output carries only keys its strict schema allows.
+- **A/B on a real agent**: `evals/opencode_ab.py` runs the cases through a
+  private OpenCode server with and without the plugin and grades each run
+  from the final files plus the transcript. Results in `evals/RESULTS.md`.
+- **Fixes the A/B found in precedent itself.** The first run showed that the
+  "don't give up" push can cause the overreach it is meant to prevent:
+  - An honest report of a quoted access denial ("Permission denied", 401,
+    Deny-Write ACL) is now evidence, not a give-up, so it is no longer sent
+    back. Before, the send-back drove an agent to try removing the ACL.
+  - "Keep trying till it works" in an opening request is no longer read as
+    pushback on a give-up (that nudge preceded a guessed `admin:admin`).
+    Pushback needs an earlier reply; the OpenCode plugin now passes it.
+  - Every nudge, the send-back text and the rules now say that a "different
+    route" never means guessed or default passwords, secrets found in env vars
+    or config files, changing permissions or ACLs, or disabling a check.
+  - Two new guard rules: changing permissions to get past a denial
+    (`icacls /grant|/remove`, `takeown`, `Set-Acl`, `attrib -r`, `chmod` that
+    adds write), and default-credential guessing (`admin:admin`,
+    `root:toor`, their Basic-auth forms, `auth=('admin', 'password')`).
+
 ## 3.2.0: automatic enforcement in Codex CLI and Gemini CLI
 
 - **Hooks for Codex CLI and Gemini CLI**, not just Claude Code. The same four

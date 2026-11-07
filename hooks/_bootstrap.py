@@ -18,6 +18,9 @@ sys.path.insert(0, os.path.join(HOOKS_DIR, "..", "skills", "precedent", "scripts
 import precedent_core as core  # noqa: E402,F401
 
 
+TOP_LEVEL_AGENTS = {"copilot", "opencode"}
+
+
 def emit(obj):
     sys.stdout.write(json.dumps(obj, ensure_ascii=False))
     sys.stdout.write("\n")
@@ -28,13 +31,29 @@ def agent_of(payload):
 
 
 def add_context(payload, event_default, text):
-    """Inject text for the model; same shape works for all three agents."""
+    """Inject text for the model, in the calling agent's own output shape.
+
+    Copilot CLI and the OpenCode plugin read a top-level additionalContext; Claude
+    Code, Codex CLI and Gemini CLI read hookSpecificOutput. Never send both: Codex
+    rejects unknown fields (serde deny_unknown_fields) and would drop the output.
+    """
+    if agent_of(payload) in TOP_LEVEL_AGENTS:
+        emit({"additionalContext": text})
+        return
     emit({
         "hookSpecificOutput": {
             "hookEventName": str(payload.get("hook_event_name") or event_default),
             "additionalContext": text,
         }
     })
+
+
+def events_for(payload):
+    """Transcript events: inline OpenCode messages (plugin) or the agent's transcript file."""
+    if isinstance(payload.get("opencode_messages"), list):
+        return core.parse_opencode_messages(payload["opencode_messages"])
+    transcript = payload.get("transcript_path")
+    return core.load_events(transcript) if transcript else []
 
 
 def run(handler):

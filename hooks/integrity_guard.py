@@ -15,10 +15,21 @@ agent sees it and can ask the user, who can approve by running it themselves.
 
 import os
 
-from _bootstrap import agent_of, core, emit, run
+from _bootstrap import TOP_LEVEL_AGENTS, agent_of, core, emit, run
 
-CLAUDE_EDITS = {"Edit", "MultiEdit", "Write"}
-GEMINI_EDITS = {"write_file", "replace"}
+REPLACE_TOOLS = {"Edit", "replace", "edit", "str_replace_editor"}  # Claude/Copilot, Gemini, OpenCode
+WRITE_TOOLS = {"Write", "write_file", "write", "create"}
+
+
+def first(mapping, *keys):
+    for key in keys:
+        value = mapping.get(key)
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+ASKS_USER = {"claude", "copilot"}  # agents whose tool hooks can ask the user
 
 
 def stop(payload, reason):
@@ -27,10 +38,13 @@ def stop(payload, reason):
     if agent == "gemini":
         emit({"decision": "deny", "reason": reason})
         return
-    decision = "ask" if agent == "claude" else "deny"
-    if agent != "claude":
+    decision = "ask" if agent in ASKS_USER else "deny"
+    if decision == "deny":
         reason += " If the user explicitly asked for this, tell them; they can run it themselves."
-    emit({
+    if agent in TOP_LEVEL_AGENTS:  # Copilot CLI and the OpenCode plugin
+        emit({"permissionDecision": decision, "permissionDecisionReason": reason})
+        return
+    emit({  # Claude Code and Codex CLI (Codex rejects any extra top-level field)
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": decision,
@@ -51,16 +65,16 @@ def read_existing(path, limit=1_000_000):
 
 def file_edits(tool, tool_input):
     """Yield (path, old_text, new_text, deleted) for any agent's edit-style call."""
-    if tool in ("Edit", "replace"):
-        yield str(tool_input.get("file_path", "")), str(tool_input.get("old_string", "")), str(tool_input.get("new_string", "")), False
+    path = first(tool_input, "file_path", "filePath", "path")
+    if tool in REPLACE_TOOLS:
+        yield path, first(tool_input, "old_string", "oldString", "old_str"), first(tool_input, "new_string", "newString", "new_str"), False
     elif tool == "MultiEdit":
         edits = [e for e in tool_input.get("edits") or [] if isinstance(e, dict)]
-        old = "\n".join(str(e.get("old_string", "")) for e in edits)
-        new = "\n".join(str(e.get("new_string", "")) for e in edits)
-        yield str(tool_input.get("file_path", "")), old, new, False
-    elif tool in ("Write", "write_file"):
-        path = str(tool_input.get("file_path", ""))
-        yield path, read_existing(path), str(tool_input.get("content", "")), False
+        old = "\n".join(first(e, "old_string", "oldString") for e in edits)
+        new = "\n".join(first(e, "new_string", "newString") for e in edits)
+        yield path, old, new, False
+    elif tool in WRITE_TOOLS:
+        yield path, read_existing(path), first(tool_input, "content", "file_text"), False
     else:
         for value in tool_input.values():
             if isinstance(value, str) and "*** Begin Patch" in value:
