@@ -103,6 +103,7 @@ def is_done_claim(text):
 
 EDIT_TOOLS = {"Edit", "MultiEdit", "Write", "NotebookEdit"}
 LOOKUP_TOOLS = {"Read", "Glob", "Grep", "LS", "TodoWrite", "Task", "TaskCreate", "ExitPlanMode"}
+LOOKUP_TOOLS_LOWER = {"read", "glob", "grep", "ls", "list", "todowrite", "todoread", "task", "skill"}
 NOISE_PREFIXES = ("<command-", "<local-command", "Caveat:", "[Request interrupted", "<system-reminder")
 FAILURE_TEXT = re.compile(
     r"Traceback \(most recent call last\)|\bExit code [1-9]\d*|command not found|"
@@ -276,16 +277,16 @@ will with work worked would yes yesterday you your youve again already able unab
 keep trying give cannot thing things way something anything help also okay ok hey
 """.split())
 
-TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9_\-]{1,}")
+WORD = re.compile(r"[a-z][a-z0-9]{2,}")
+COMPOUND = re.compile(r"[a-z][a-z0-9]*(?:[_\-][a-z0-9]+)+")
 
 
 def tokens(text):
-    found = set()
-    for raw in TOKEN.findall((text or "").lower()):
-        for part in re.split(r"[_\-]", raw) + [raw]:
-            if len(part) >= 3 and part not in STOPWORDS:
-                found.add(part)
-    return found
+    """Lowercase word set: parts of compounds plus the compounds themselves."""
+    low = (text or "").lower()
+    found = set(WORD.findall(low))
+    found.update(COMPOUND.findall(low))
+    return found - STOPWORDS
 
 
 SECRET_PATTERNS = [
@@ -305,8 +306,10 @@ def redact(text):
 
 
 def summarize_input(name, tool_input):
-    for key in ("command", "file_path", "notebook_path", "url", "query", "pattern", "path"):
+    for key in ("command", "cmd", "file_path", "filePath", "notebook_path", "file", "url", "query", "pattern", "path", "input"):
         value = tool_input.get(key)
+        if isinstance(value, list):
+            value = " ".join(str(v) for v in value)
         if isinstance(value, str) and value.strip():
             return value.strip()
     try:
@@ -334,13 +337,14 @@ def transcript_candidates(path, skip_last_turn, same_project):
         for index, use in enumerate(uses):
             last_index_by_tool[use["name"]] = index
         for index, use in enumerate(uses):
-            if use["name"] in LOOKUP_TOOLS:
+            if use["name"] in LOOKUP_TOOLS or use["name"].lower() in LOOKUP_TOOLS_LOWER:
                 continue
             summary = summarize_input(use["name"], use["input"])
             if not summary:
                 continue
             yield {
                 "source": "claude-code",
+                "agent": "Claude Code",
                 "session": session,
                 "same_project": same_project,
                 "when": str(use.get("ts", ""))[:10],
@@ -375,6 +379,7 @@ def shell_candidates(max_lines=5000):
                 continue
             yield {
                 "source": f"shell history ({path.name})",
+                "agent": "",
                 "session": "",
                 "same_project": False,
                 "when": "",
@@ -405,6 +410,7 @@ def git_candidates(query_tokens, cwd, limit=3):
             if len(parts) == 3:
                 yield {
                     "source": "git log",
+                    "agent": "",
                     "session": parts[0],
                     "same_project": True,
                     "when": parts[1],
@@ -443,61 +449,137 @@ def transcript_files(current_path=None, all_projects=True, max_files=60):
     return ordered
 
 
-def score(candidate, query_tokens):
-    summary_hits = len(query_tokens & tokens(candidate["summary"]))
-    task_hits = len(query_tokens & tokens(candidate["task"]))
-    if summary_hits == 0 and task_hits < 2:
+SUMMARY_HEAD = 300
+TASK_HEAD = 400
+
+
+def candidate_tokens(candidate):
+    """Token sets used for matching, cached on the candidate.
+
+    Only the head of a command counts: long scripts that embed whole documents
+    would otherwise match every query.
+    """
+    if "_summary_tokens" not in candidate:
+        candidate["_summary_tokens"] = tokens(candidate["summary"][:SUMMARY_HEAD])
+        candidate["_task_tokens"] = tokens(candidate["task"][:TASK_HEAD])
+    return candidate["_summary_tokens"], candidate["_task_tokens"]
+
+
+def min_coverage(query_tokens):
+    """Share of the query's information a hit must cover; looser for long queries."""
+    return 0.5 if len(query_tokens) <= 4 else 0.25
+
+
+def score(candidate, query_tokens, idf=None, present=None):
+    """Relevance of one candidate. idf maps token -> weight (rarer = heavier).
+
+    A hit must cover enough of the query's information (IDF-weighted), so a
+    command that shares only common words with the query never ranks.
+    Words that appear nowhere in history (not in `present`) cannot tell
+    candidates apart, so they do not count against coverage.
+    """
+    summary_tokens, task_tokens = candidate_tokens(candidate)
+    summary_match = query_tokens & summary_tokens
+    task_match = query_tokens & task_tokens
+    if not summary_match and len(task_match) < 2:
         return 0
-    value = 2 * summary_hits + task_hits
+    weight = (lambda t: idf.get(t, 1.0)) if idf else (lambda t: 1.0)
+    informative = present if present is not None else query_tokens
+    total = sum(weight(t) for t in informative) or 1.0
+    coverage = sum(weight(t) for t in summary_match | task_match) / total
+    if coverage < min_coverage(informative):
+        return 0
+    value = (2 * sum(weight(t) for t in summary_match) + sum(weight(t) for t in task_match)) * (0.5 + coverage)
     if candidate["final_in_turn"]:
-        value += 1
+        value += 0.5
     if candidate["same_project"]:
         value += 1
     if candidate["outcome"] == "outcome unknown":
         value -= 1
-    return value
+    if len(candidate["summary"]) > SUMMARY_HEAD:
+        value -= 1
+    return max(value, 0)
+
+
+def idf_weights(candidates, query_tokens):
+    """Return (idf, present): IDF for the query's tokens and the tokens seen at least once."""
+    import math
+
+    total = len(candidates)
+    if not total:
+        return {}, set()
+    frequency = {t: 0 for t in query_tokens}
+    for candidate in candidates:
+        summary_tokens, task_tokens = candidate_tokens(candidate)
+        for t in query_tokens & (summary_tokens | task_tokens):
+            frequency[t] += 1
+    idf = {t: math.log((total + 1) / (count + 1)) + 1 for t, count in frequency.items()}
+    present = {t for t, count in frequency.items() if count}
+    return idf, present
 
 
 def find_precedents(query, current_path=None, cwd=None, limit=5, include_shell=True,
-                    include_git=False, all_projects=True, time_budget=4.0):
-    """Rank successful past actions that match the query."""
+                    include_git=False, all_projects=True, time_budget=4.0, agents=None):
+    """Rank successful past actions that match the query, across agents.
+
+    agents: optional set of {"claude-code", "opencode", "codex"} to search;
+    default is all of them.
+    """
+    import history_sources
+
     query_tokens = tokens(query)
     if not query_tokens:
         return []
+    wanted = set(agents) if agents else {"claude-code", "opencode", "codex"}
     deadline = time.monotonic() + time_budget
     current_resolved = Path(current_path).resolve() if current_path else None
-    scored = []
+    pool = []
 
-    for path, same_project in transcript_files(current_path, all_projects=all_projects):
-        if time.monotonic() > deadline:
-            break
-        is_current = current_resolved is not None and path.resolve() == current_resolved
-        for candidate in transcript_candidates(path, skip_last_turn=is_current, same_project=same_project):
-            value = score(candidate, query_tokens)
-            if value > 0:
-                scored.append((value, candidate))
+    def collect(candidates):
+        pool.extend(candidates)
+
+    if "claude-code" in wanted:
+        for path, same_project in transcript_files(current_path, all_projects=all_projects):
+            if time.monotonic() > deadline:
+                break
+            is_current = current_resolved is not None and path.resolve() == current_resolved
+            collect(transcript_candidates(path, skip_last_turn=is_current, same_project=same_project))
+
+    if "opencode" in wanted and time.monotonic() < deadline:
+        try:
+            collect(history_sources.opencode_candidates(summarize_input, cwd=cwd))
+        except Exception:
+            pass
+
+    if "codex" in wanted and time.monotonic() < deadline:
+        try:
+            collect(history_sources.codex_candidates(summarize_input, FAILURE_TEXT, cwd=cwd, deadline=deadline))
+        except Exception:
+            pass
 
     if include_shell and time.monotonic() < deadline:
-        for candidate in shell_candidates():
-            value = score(candidate, query_tokens)
-            if value > 0:
-                scored.append((value, candidate))
+        collect(shell_candidates())
 
     if include_git and cwd and time.monotonic() < deadline:
-        for candidate in git_candidates(query_tokens, cwd):
-            value = score(candidate, query_tokens)
-            if value > 0:
-                scored.append((value, candidate))
+        collect(git_candidates(query_tokens, cwd))
+
+    idf, present = idf_weights(pool, query_tokens)
+    scored = []
+    for candidate in pool:
+        value = score(candidate, query_tokens, idf, present)
+        if value > 0:
+            scored.append((value, candidate))
 
     scored.sort(key=lambda item: (item[0], item[1]["when"]), reverse=True)
     hits = []
     seen = set()
     for value, candidate in scored:
-        key = (candidate["tool"], candidate["summary"].strip().lower())
+        key = (candidate["tool"].lower(), " ".join(candidate["summary"].lower().split())[:120])
         if key in seen:
             continue
         seen.add(key)
-        candidate = dict(candidate, score=value, summary=redact(candidate["summary"]), task=redact(candidate["task"]))
+        candidate = {k: v for k, v in candidate.items() if not k.startswith("_")}
+        candidate.update(score=round(value, 2), summary=redact(candidate["summary"]), task=redact(candidate["task"]))
         hits.append(candidate)
         if len(hits) >= limit:
             break
@@ -508,8 +590,8 @@ def format_hits(hits):
     lines = []
     for hit in hits:
         where = hit["source"]
-        if hit["source"] == "claude-code":
-            where = "this project" if hit["same_project"] else "another project"
+        if hit.get("agent"):
+            where = hit["agent"] + (", this project" if hit["same_project"] else ", another project")
             where += f", session {hit['session']}"
         if hit["when"]:
             where = f"{hit['when']}, {where}"
@@ -527,9 +609,30 @@ def precedent_block(hits):
             + format_hits(hits)
         )
     return (
-        "\n\nNo matching precedent was found in local history (Claude Code sessions, shell history). "
+        "\n\nNo matching precedent was found in local history (Claude Code, OpenCode and Codex sessions, "
+        "shell history). "
         "Do not claim to remember one."
     )
+
+
+def review_reply(draft, edited_since_last_check=False, last_check="none", cwd=None):
+    """Agent-agnostic review of a draft final answer. Returns (verdict, message)."""
+    if is_give_up(draft):
+        hits = find_precedents(draft, cwd=cwd, limit=4)
+        return "revise", (
+            "This reply gives up without evidence. Name the exact blocker, look for precedent, "
+            "try at least three routes that differ in kind, and verify. If still blocked, reply "
+            "with Result / Precedent / Tried / Check / Needs from you." + precedent_block(hits)
+        )
+    if is_done_claim(draft):
+        if last_check == "failed":
+            return "revise", "This reply claims success but the last check failed. Fix the cause and check again."
+        if edited_since_last_check or last_check == "none":
+            return "revise", (
+                "This reply claims success without a check after the last change. Run a real check "
+                "(tests, run it, read it back, re-fetch) and report the result, or say it is unverified."
+            )
+    return "ok", "No problems found. Send it."
 
 
 # ---------------------------------------------------------------------------
@@ -585,6 +688,37 @@ def save_state(session_id, state):
         state_path(session_id).write_text(json.dumps(state), encoding="utf-8")
     except OSError:
         pass
+
+
+def register_failure(session_id, tool_name, error_text):
+    """Record a failure; return (notes, repeats, total, signature) for loop-breaking."""
+    state = load_state(session_id)
+    counts = state.setdefault("signatures", {})
+    signature = failure_signature(tool_name, error_text)
+    counts[signature] = counts.get(signature, 0) + 1
+    state["total"] = state.get("total", 0) + 1
+    save_state(session_id, state)
+
+    repeats = counts[signature]
+    total = state["total"]
+    notes = []
+    if repeats == 2:
+        notes.append(
+            f"[precedent] Same failure twice ({signature}). Repeating this route will not work. "
+            "Read the full error, then switch to a route that differs in kind: fix the specific "
+            "cause, use a different tool, or go one level lower."
+        )
+    elif repeats in (3, 5):
+        notes.append(
+            f"[precedent] Same failure {repeats} times ({signature}). Stop and list three different "
+            "hypotheses for the cause; test the cheapest one first."
+        )
+    if total in (4, 8):
+        notes.append(
+            f"[precedent] {total} failed tool calls this session. Pause: name the blocker in one "
+            "sentence, look for precedent, and make sure the next attempt is a different kind of route."
+        )
+    return notes, repeats, total, signature
 
 
 # ---------------------------------------------------------------------------

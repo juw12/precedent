@@ -1,9 +1,9 @@
 ---
 name: precedent
-description: Stops premature "I can't do this" give-ups without faking success. Before declaring a task impossible, the agent finds real precedent (the command or step that worked before, from this chat, past sessions, shell history, the project or docs), climbs a ladder of genuinely different routes, and verifies the result with a real check. Use when the agent is about to say it cannot, is stuck or looping on one failing approach, wants to hand work back to the user, is about to claim "done" without checking, or when the user says "you did it before", "you can do this", "try again", "don't give up" or /precedent. Not for safety, legal or permission refusals.
+description: Stops premature "I can't do this" give-ups without faking success, in any AI agent. Before declaring a task impossible, the agent finds real precedent (the command that worked before, from past Claude Code, OpenCode or Codex sessions, shell history, git, the project or docs), climbs a ladder of genuinely different routes, and verifies the result with a real check. Use when the agent is about to say it cannot, is stuck or looping on one failing approach, wants to hand work back to the user, is about to claim "done" without checking, or when the user says "you did it before", "you can do this", "try again", "don't give up" or /precedent. Not for safety, legal or permission refusals.
 license: MIT
 metadata:
-  version: "2.0.0"
+  version: "3.0.0"
 ---
 
 # Precedent
@@ -54,13 +54,14 @@ Quote the exact error or observation. "It doesn't work" is not a blocker;
 
 ### 2. Search for precedent (in order; stop when found)
 
-1. **Run the precedent finder** if you have a shell. It searches past Claude
-   Code sessions (successful tool calls and the task they served), shell history
-   and git log on this machine:
+1. **Run the precedent finder.** It searches successful tool calls from past
+   Claude Code, OpenCode and Codex sessions (with the task each one served),
+   shell history and git log on this machine. Failed attempts are excluded.
+   - If the `precedent` MCP tools are available, call `find_precedent`.
+   - Otherwise, with a shell:
    ```
    python <this skill's folder>/scripts/find_precedent.py "<task words, tool, file or error>" --git
    ```
-   (In the plugin install the folder is `${CLAUDE_PLUGIN_ROOT}/skills/precedent`.)
 2. **This conversation.** Did the same or a similar step succeed earlier?
 3. **The workspace.** Files, scripts, notes, READMEs, saved skills, logs.
 4. **Your own tools.** List the tools you actually have and read their
@@ -113,6 +114,10 @@ money or an irreversible action. In that case ask first (Rule 6).
 Check the user's actual goal end to end, not just the step you changed.
 "It should work now" is not a check.
 
+With the `precedent` MCP tools: call `review_reply` on your draft final answer,
+`record_failure` after a failed command, `check_test_edit` before editing tests
+and `check_command` before destructive commands.
+
 ### 5. Report
 
 ```
@@ -149,9 +154,11 @@ Treat it as a strong hint that the task is possible, **not** as proof.
 - **Over-pushing:** hammering logins, rate limits or permissions, or deleting
   things to make an error go away.
 
-## Enforcement (Claude Code plugin)
+## Enforcement
 
-When installed as a plugin, hooks enforce this skill automatically: they attach
-real precedent when the user says "you did it before", send back give-ups that
-skip the loop, send back "done" claims with no check after the last edit, flag
-same-error loops, and ask before test-weakening edits or destructive commands.
+- **Any MCP agent** (Cursor, Codex, OpenCode, Gemini CLI, Claude Desktop/Code,
+  VS Code, Windsurf): the `precedent` MCP server provides the tools above.
+- **Claude Code**: hooks also enforce it automatically. They attach real
+  precedent when the user says "you did it before", send back give-ups that skip
+  the loop and "done" claims with no check after the last edit, flag same-error
+  loops, and ask before test-weakening edits or destructive commands.

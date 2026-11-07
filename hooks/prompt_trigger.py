@@ -15,8 +15,8 @@ CLAIM_FOUND = (
 )
 CLAIM_NOT_FOUND = (
     "[precedent] The user says this was done before, but no matching successful "
-    "action was found in local history (Claude Code sessions for this machine, shell "
-    "history). Do not claim to remember it. Treat the claim as a hint that the task is "
+    "action was found in local history (Claude Code, OpenCode and Codex sessions on this "
+    "machine, shell history). Do not claim to remember it. Treat the claim as a hint that the task is "
     "possible: name the blocker, search the workspace and your tool list, try at least "
     "three routes that differ in kind, and verify. If still blocked, say what you searched."
 )

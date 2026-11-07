@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.0.0: works with every agent
+
+- **Cross-agent precedent search**: reads OpenCode's SQLite history (schema
+  checked against a real install) and Codex CLI rollouts, alongside Claude Code,
+  shell history and git. Success = completed status / exit code 0.
+- **MCP server** (stdio, standard library): `find_precedent`, `review_reply`,
+  `record_failure`, `check_test_edit`, `check_command`, plus a `precedent`
+  prompt. Works in Cursor, Codex, OpenCode, Gemini CLI, Claude Desktop/Code,
+  VS Code and Windsurf.
+- **Installer** (`install.py`): detects agents and installs the skill, rules
+  (AGENTS.md / GEMINI.md) and MCP config. Dry run by default, backups,
+  idempotent, clean uninstall.
+- **Better ranking** after testing on real history: only the head of a command
+  is matched, words weighted by rarity (IDF), minimum coverage of the query,
+  injected system text ignored, near-duplicates merged. 2–4x faster tokenizer.
+- 61 automated tests.
+
 ## 2.0.0
 
 - **Precedent finder**: searches past Claude Code sessions (successful tool calls

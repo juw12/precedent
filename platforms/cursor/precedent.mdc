@@ -17,9 +17,9 @@ Rules:
 
 Loop:
 1. Name the exact blocker (quote the error).
-2. Look for precedent: this chat, the workspace and git history, your own tools, the docs. If a shell is available: `python <precedent repo>/skills/precedent/scripts/find_precedent.py "<task words>" --git`
+2. Look for precedent: if the `precedent` MCP server is connected, call `find_precedent`; otherwise run `python <precedent repo>/skills/precedent/scripts/find_precedent.py "<task words>" --git`. Also check this chat, the workspace and git history, your own tools, the docs.
 3. Try at least three routes that differ in kind: reuse the precedent, fix the specific cause, use a different tool, go one level lower, break the task up, make one targeted ask.
-4. Verify with a real check.
+4. Verify with a real check. With the MCP server, call `review_reply` on your draft final answer.
 5. Report: `Result: DONE (verified) | PARTIAL | BLOCKED`, `Precedent:`, `Tried:`, `Check:`, `Needs from you:`.
 
 If the user says "you did it before": search for it. Found: cite it and reuse it. Not found: say so plainly and try anyway. Never fake the memory.

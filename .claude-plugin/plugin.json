@@ -1,7 +1,7 @@
 {
   "name": "precedent",
-  "version": "2.0.0",
-  "description": "Fewer false \"I can't\"s, zero fake \"done\"s. Finds the command that worked last time before the agent gives up, blocks unverified 'done' claims, breaks same-error loops, and guards against test-weakening. Local only.",
+  "version": "3.0.0",
+  "description": "Fewer false \"I can't\"s, zero fake \"done\"s, in every AI agent. Finds the command that worked last time (Claude Code, OpenCode, Codex history) before the agent gives up, blocks unverified 'done' claims, breaks same-error loops, and guards against test-weakening. MCP server + hooks. Local only.",
   "author": {
     "name": "Juwen Lie"
   },

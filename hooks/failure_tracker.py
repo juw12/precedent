@@ -3,7 +3,7 @@
 
 Counts failures per session by a normalized error signature.
 - 2nd identical failure: stop repeating, switch to a route that differs in kind.
-- 3rd and 5th identical failure: also attach precedent from local history.
+- 3rd and 5th identical failure: also list hypotheses and attach precedent.
 - 4th and 8th failure overall: pause and run the full precedent loop.
 Silent otherwise. Successful tools never reset the count: a passing `ls` is
 not evidence the task works.
@@ -20,33 +20,7 @@ def handle(payload):
         return
 
     session = str(payload.get("session_id") or "default")
-    state = core.load_state(session)
-    counts = state.setdefault("signatures", {})
-    signature = core.failure_signature(tool, error_text)
-    counts[signature] = counts.get(signature, 0) + 1
-    state["total"] = state.get("total", 0) + 1
-    core.save_state(session, state)
-
-    repeats = counts[signature]
-    total = state["total"]
-    notes = []
-
-    if repeats == 2:
-        notes.append(
-            f"[precedent] Same failure twice ({signature}). Repeating this route will not work. "
-            "Read the full error, then switch to a route that differs in kind: fix the specific "
-            "cause, use a different tool, or go one level lower."
-        )
-    elif repeats in (3, 5):
-        notes.append(
-            f"[precedent] Same failure {repeats} times ({signature}). Stop and list three different "
-            "hypotheses for the cause; test the cheapest one first."
-        )
-    if total in (4, 8):
-        notes.append(
-            f"[precedent] {total} failed tool calls this session. Pause: name the blocker in one "
-            "sentence, look for precedent, and make sure the next attempt is a different kind of route."
-        )
+    notes, repeats, total, _ = core.register_failure(session, tool, error_text)
     if not notes:
         return
 
