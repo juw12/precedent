@@ -1,6 +1,6 @@
 # precedent
 
-[![M8ven Score](https://m8ven.ai/badge/mcp/juw12/precedent)](https://m8ven.ai/mcp/juw12/precedent?s=readme)
+[![M8ven Score](https://m8ven.ai/badge/mcp/juw12/precedent)](https://m8ven.ai/mcp/juw12/precedent?s=readme) [![Glama score](https://glama.ai/mcp/servers/juw12/precedent/badges/score.svg)](https://glama.ai/mcp/servers/juw12/precedent)
 
 **Stop false "I can't"s and unchecked "done"s in your AI coding agents.**
 
