@@ -1,5 +1,7 @@
 # precedent
 
+[![M8ven Score](https://m8ven.ai/badge/mcp/juw12/precedent)](https://m8ven.ai/mcp/juw12/precedent?s=readme)
+
 **Stop false "I can't"s and unchecked "done"s in your AI coding agents.**
 
 Enforced automatically in Claude Code, Codex CLI, Gemini CLI, OpenCode and GitHub Copilot CLI;
