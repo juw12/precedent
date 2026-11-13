@@ -1,0 +1,116 @@
+name: Publish to MCP Registry
+
+# Builds the MCPB bundle, smoke-tests it, attaches it to a GitHub release and publishes
+# server.json to the official MCP Registry (registry.modelcontextprotocol.io).
+# Auth is GitHub OIDC, so no secrets are stored. Bump the version in mcpb/manifest.json first.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["mcp-v*"]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      MCP_PUBLISHER_VERSION: v1.8.9
+      SERVER_NAME: io.github.juw12/precedent
+      BUNDLE: precedent.mcpb
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "lts/*"
+
+      - name: Assemble bundle folder
+        run: |
+          set -euo pipefail
+          rm -rf build && mkdir -p build/server
+          cp skills/precedent/scripts/*.py build/server/
+          cp LICENSE build/LICENSE
+          cp mcpb/manifest.json build/manifest.json
+          find build -name __pycache__ -prune -exec rm -rf {} +
+
+      - name: Validate and pack with the official MCPB tool
+        run: |
+          npx -y @anthropic-ai/mcpb validate build/manifest.json
+          npx -y @anthropic-ai/mcpb pack build "$BUNDLE"
+
+      - name: Smoke test (start the server from the bundle, list tools)
+        run: python mcpb/smoke_test.py "$BUNDLE" --expect-tools 5
+
+      - name: Create or reuse the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VERSION=$(python -c "import json; print(json.load(open('mcpb/manifest.json'))['version'])")
+          TAG="mcp-v$VERSION"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # Never replace a published artifact: reuse it so the hash stays valid.
+            rm -f "$BUNDLE"
+            gh release download "$TAG" --pattern "$BUNDLE"
+          else
+            gh release create "$TAG" "$BUNDLE" --target "$GITHUB_SHA" \
+              --title "precedent $VERSION (MCP bundle)" \
+              --notes "MCPB bundle for the MCP Registry. Install by opening the file in an MCPB-aware client, or see the README."
+          fi
+
+      - name: Write server.json
+        run: |
+          python - <<'PY'
+          import hashlib, json, os
+          bundle = os.environ["BUNDLE"]
+          version = os.environ["VERSION"]
+          tag = os.environ["TAG"]
+          sha = hashlib.sha256(open(bundle, "rb").read()).hexdigest()
+          server = {
+              "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+              "name": os.environ["SERVER_NAME"],
+              "title": "precedent",
+              "description": "Checks an AI coding agent's \"I can't\" and \"done\" claims against evidence.",
+              "version": version,
+              "repository": {"url": "https://github.com/juw12/precedent", "source": "github"},
+              "websiteUrl": "https://github.com/juw12/precedent",
+              "packages": [{
+                  "registryType": "mcpb",
+                  "identifier": f"https://github.com/juw12/precedent/releases/download/{tag}/{bundle}",
+                  "version": version,
+                  "fileSha256": sha,
+                  "transport": {"type": "stdio"},
+              }],
+          }
+          json.dump(server, open("server.json", "w"), indent=2)
+          print(json.dumps(server, indent=2))
+          PY
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Download and verify mcp-publisher
+        run: |
+          set -euo pipefail
+          archive="mcp-publisher_linux_amd64.tar.gz"
+          base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail --location --silent --show-error --output "$archive" "$base_url/$archive"
+          curl --fail --location --silent --show-error --output "$archive.sigstore.json" "$base_url/$archive.sigstore.json"
+          cosign verify-blob \
+            --bundle "$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$archive"
+          tar xzf "$archive" mcp-publisher
+
+      - name: Publish to the MCP Registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

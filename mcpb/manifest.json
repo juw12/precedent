@@ -1,0 +1,46 @@
+{
+  "manifest_version": "0.3",
+  "name": "precedent",
+  "display_name": "precedent",
+  "version": "3.3.0",
+  "description": "Checks an AI coding agent's \"I can't\" and \"done\" claims against evidence before they reach you.",
+  "long_description": "precedent finds proof that a task was done before (agent history, shell history, git), reviews a draft final answer for unproven \"can't\" and unverified \"done\", counts repeated failures, and flags test-weakening edits and destructive commands. Standard library only, local, no network, no telemetry.",
+  "author": {
+    "name": "Juwen Lie",
+    "url": "https://github.com/juw12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/juw12/precedent.git"
+  },
+  "homepage": "https://github.com/juw12/precedent",
+  "support": "https://github.com/juw12/precedent/issues",
+  "server": {
+    "type": "python",
+    "entry_point": "server/mcp_server.py",
+    "mcp_config": {
+      "command": "python",
+      "args": [
+        "${__dirname}/server/mcp_server.py"
+      ]
+    }
+  },
+  "keywords": [
+    "ai-agents",
+    "guardrails",
+    "claude-code",
+    "codex",
+    "verification"
+  ],
+  "license": "MIT",
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  }
+}
