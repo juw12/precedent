@@ -37,9 +37,22 @@ INSTRUCTIONS = (
     "success or output; if no precedent is found, say so and keep trying different routes."
 )
 
+
+def hints(title, read_only):
+    """MCP tool annotations. Every tool is local only (no network) and never deletes anything."""
+    return {
+        "title": title,
+        "readOnlyHint": read_only,
+        "destructiveHint": False,
+        "idempotentHint": read_only,
+        "openWorldHint": False,
+    }
+
+
 TOOLS = [
     {
         "name": "find_precedent",
+        "annotations": hints("Find precedent", True),
         "description": (
             "Search this machine for proof a task was done before: successful tool calls from past "
             "Claude Code, OpenCode, Codex and Gemini CLI sessions (with the task they served), shell history and "
@@ -59,6 +72,7 @@ TOOLS = [
     },
     {
         "name": "review_reply",
+        "annotations": hints("Review draft reply", True),
         "description": (
             "Review a draft final answer before sending. Flags a give-up without evidence (and attaches "
             "precedent), a success claim without a passing check after the last change, and a cited "
@@ -86,6 +100,7 @@ TOOLS = [
     },
     {
         "name": "record_failure",
+        "annotations": hints("Record a failure", False),
         "description": (
             "Record a failed command or tool call. Returns how many times this same error has happened "
             "and what to do differently (switch route on the 2nd repeat, hypotheses on the 3rd)."
@@ -103,6 +118,7 @@ TOOLS = [
     },
     {
         "name": "check_test_edit",
+        "annotations": hints("Check a test edit", True),
         "description": "Before editing a test file: flags skip/xfail/only markers, always-true assertions and removed assertions.",
         "inputSchema": {
             "type": "object",
@@ -116,6 +132,7 @@ TOOLS = [
     },
     {
         "name": "check_command",
+        "annotations": hints("Check a shell command", True),
         "description": "Before running a shell command: flags force-push, --no-verify, reset --hard, broad recursive deletes.",
         "inputSchema": {
             "type": "object",

@@ -77,6 +77,18 @@ class McpProtocol(unittest.TestCase):
         self.assertIn("route ladder", text.lower())
         self.assertIn("sftp upload", text)
 
+    def test_every_tool_declares_all_four_hints(self):
+        tools = self.mcp.send("tools/list")["result"]["tools"]
+        hint_names = ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint")
+        for tool in tools:
+            annotations = tool.get("annotations") or {}
+            for hint in hint_names:
+                self.assertIsInstance(annotations.get(hint), bool, f"{tool['name']} lacks {hint}")
+            self.assertFalse(annotations["destructiveHint"], tool["name"])
+            self.assertFalse(annotations["openWorldHint"], tool["name"])
+        read_only = {t["name"] for t in tools if t["annotations"]["readOnlyHint"]}
+        self.assertEqual(read_only, {"find_precedent", "review_reply", "check_test_edit", "check_command"})
+
     def test_old_protocol_version_is_negotiated(self):
         init = self.mcp.send("initialize", {"protocolVersion": "2024-11-05", "capabilities": {}})
         self.assertEqual(init["result"]["protocolVersion"], "2024-11-05")
