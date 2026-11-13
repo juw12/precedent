@@ -54,7 +54,7 @@ TOOLS = [
         "name": "find_precedent",
         "annotations": hints("Find precedent", True),
         "description": (
-            "Search this machine for proof a task was done before: successful tool calls from past "
+            "Look through this machine for proof a task was done before: successful tool calls from past "
             "Claude Code, OpenCode, Codex and Gemini CLI sessions (with the task they served), shell history and "
             "optionally git log. Failed attempts are excluded. Use before saying you can't, or when "
             "the user says 'you did it before'."
