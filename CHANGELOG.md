@@ -1,14 +1,5 @@
 # Changelog
 
-## Unreleased
-
-- **MCP tool annotations.** Every tool now declares all four hints
-  (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) plus a
-  title, so clients and directories can tell what a call does before running
-  it. Four tools are read-only; `record_failure` is not, because it counts
-  failures in a per-session temp file. Nothing is destructive and nothing
-  touches the network. A test asserts the hints on every tool.
-
 ## 3.3.0: OpenCode and GitHub Copilot CLI enforcement, measured on a real agent
 
 - **OpenCode plugin** (`platforms/opencode/precedent.js`), one file for both
@@ -49,6 +40,13 @@
     (`icacls /grant|/remove`, `takeown`, `Set-Acl`, `attrib -r`, `chmod` that
     adds write), and default-credential guessing (`admin:admin`,
     `root:toor`, their Basic-auth forms, `auth=('admin', 'password')`).
+
+- **MCP tool annotations** (in the published MCP bundle `mcp-v3.3.0`). Every tool declares all four hints
+  (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) plus a
+  title, so clients and directories can tell what a call does before running
+  it. Four tools are read-only; `record_failure` is not, because it counts
+  failures in a per-session temp file. Nothing is destructive and nothing
+  touches the network. A test asserts the hints on every tool.
 
 ## 3.2.0: automatic enforcement in Codex CLI and Gemini CLI
 
