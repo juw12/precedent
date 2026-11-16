@@ -1,6 +1,7 @@
 """Installer: dry run writes nothing, apply is correct and idempotent, uninstall is clean."""
 
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -8,6 +9,30 @@ from pathlib import Path
 
 from helpers import ROOT, Sandbox
 from test_mcp import McpSession
+
+
+def vscode_user_dir(home):
+    """Where VS Code keeps user settings on this OS, inside the sandbox home (same rule as install.py)."""
+    if os.name == "nt":
+        return home / "AppData" / "Code" / "User"
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "Code" / "User"
+    return home / ".config" / "Code" / "User"
+
+
+def shell_works(argv, env):
+    """True when this shell can run a command at all.
+
+    On Windows, `bash` on PATH can be the WSL launcher with no Linux installed:
+    it exists, prints an error and exits 1 for every command. That is not an
+    available shell, so the hook test must not count it.
+    """
+    try:
+        probe = subprocess.run(argv + ["echo precedent-shell-ok"], capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", env=env, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return probe.returncode == 0 and "precedent-shell-ok" in probe.stdout
 
 
 def snapshot(folder):
@@ -34,8 +59,9 @@ class Installer(unittest.TestCase):
         (h / ".gemini").mkdir()
         (h / ".gemini" / "settings.json").write_text(json.dumps({"theme": "Dracula"}), encoding="utf-8")
         (h / ".cursor").mkdir()
-        (h / "AppData" / "Code" / "User").mkdir(parents=True)
-        (h / "AppData" / "Code" / "User" / "mcp.json").write_text('{\n  // my servers\n  "servers": {}\n}\n', encoding="utf-8")
+        self.vscode_mcp = vscode_user_dir(h) / "mcp.json"
+        self.vscode_mcp.parent.mkdir(parents=True)
+        self.vscode_mcp.write_text('{\n  // my servers\n  "servers": {}\n}\n', encoding="utf-8")
 
     def tearDown(self):
         self.box.cleanup()
@@ -96,7 +122,7 @@ class Installer(unittest.TestCase):
         self.assertTrue((h / ".gemini" / "GEMINI.md").is_file())
 
         self.assertIn("SKIP", out)
-        self.assertIn("// my servers", (h / "AppData" / "Code" / "User" / "mcp.json").read_text(encoding="utf-8"))
+        self.assertIn("// my servers", self.vscode_mcp.read_text(encoding="utf-8"))
         self.assertTrue((h / ".config" / "opencode" / "opencode.json.precedent-bak").is_file())
 
     def test_second_apply_is_idempotent(self):
@@ -205,7 +231,7 @@ class AgentHooks(unittest.TestCase):
         shells = [("default", None)]
         for name, argv in (("bash", ["bash", "-c"]), ("powershell", ["powershell", "-NoProfile", "-Command"]),
                            ("cmd", ["cmd", "/d", "/s", "/c"])):
-            if shutil.which(argv[0]):
+            if shutil.which(argv[0]) and shell_works(argv, self.box.env()):
                 shells.append((name, argv))
         ran = []
         for name, argv in shells:
@@ -215,7 +241,7 @@ class AgentHooks(unittest.TestCase):
             else:
                 result = subprocess.run(argv + [command], input=payload, capture_output=True, text=True,
                                         encoding="utf-8", env=self.box.env(), timeout=60)
-            self.assertEqual(result.returncode, 0, f"{name}: {result.stderr}")
+            self.assertEqual(result.returncode, 0, f"{name}: stderr={result.stderr!r} stdout={result.stdout!r}")
             self.assertEqual(json.loads(result.stdout)["decision"], "block", f"{name}: {result.stdout!r}")
             ran.append(name)
         self.assertGreaterEqual(len(ran), 2, ran)
