@@ -15,6 +15,15 @@ lacked was a **precedent**.
 history, before the agent gives up. It also makes sure a pushed agent never
 fakes success to please you.
 
+## Get it on your device
+
+- **Windows:** [`precedent-Windows-Setup.exe`](https://github.com/juw12/precedent/releases/download/desktop/precedent-Windows-Setup.exe) (no admin needed; if Windows says it protected your PC, choose *More info → Run anyway*), or without installing [`precedent-Windows-Portable.zip`](https://github.com/juw12/precedent/releases/download/desktop/precedent-Windows-Portable.zip).
+- **Mac:** [`precedent-macOS-AppleSilicon.dmg`](https://github.com/juw12/precedent/releases/download/desktop/precedent-macOS-AppleSilicon.dmg) (M1 and newer) or [`precedent-macOS-Intel.dmg`](https://github.com/juw12/precedent/releases/download/desktop/precedent-macOS-Intel.dmg). The first time, macOS blocks it because it is not notarized: **System Settings → Privacy & Security → Open Anyway**.
+- **Android:** [`precedent-android.apk`](https://github.com/juw12/precedent/releases/download/android/precedent-android.apk): open the file on the phone and allow your browser to install apps once.
+- **iPhone:** open https://juw12.github.io/precedent/ in Safari, tap Share, then **Add to Home Screen**.
+
+The Windows, Mac and Android apps open the precedent guide (https://juw12.github.io/precedent/: this README laid out for a phone, readable without a connection) in its own window ([`desktop/`](desktop/README.md), [`android/`](android/README.md)) and change with it. precedent itself runs on a computer and is installed the way this README says; the apps do not contain it. Each build is opened on GitHub's machines before it is published: on Windows and on a Mac the page loads, the app starts and can store data; on an Android emulator it installs, opens and stays up. They are not code-signed or notarised, and no real phone or PC has run them yet.
+
 ## Before / after
 
 **Without precedent:**
