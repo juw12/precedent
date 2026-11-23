@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>precedent guide: Stops AI coding agents from saying they cannot without evidence, or done without proof</title>
+<meta name="description" content="Stops AI coding agents from saying they cannot without evidence, or done without proof">
+<link rel="canonical" href="https://juw12.github.io/precedent/">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="precedent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#fbfaf6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171614" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="precedent guide">
+<meta property="og:description" content="Stops AI coding agents from saying they cannot without evidence, or done without proof">
+<style>
+:root{--paper:#fbfaf6;--ink:#1d1c1a;--soft:#5d5a54;--line:#e3dfd5;--card:#ffffff;--accent:#953f23;--code:#f1eee6}
+@media (prefers-color-scheme:dark){:root{--paper:#171614;--ink:#eeebe4;--soft:#a9a49a;--line:#35322d;--card:#201f1c;--accent:#e09c85;--code:#262420}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:17px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+header.bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;min-height:60px;padding:8px 16px;padding-top:max(8px,env(safe-area-inset-top));background:var(--paper);border-bottom:1px solid var(--line)}
+header.bar img{width:36px;height:36px;border-radius:9px;flex:none}
+header.bar .name{font-weight:700;font-size:18px;line-height:1.2;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+header.bar .name small{display:block;font-weight:500;font-size:13px;color:var(--soft)}
+header.bar a.source{flex:none;display:inline-flex;align-items:center;min-height:48px;padding:0 16px;border:1px solid var(--line);border-radius:24px;background:var(--card);color:var(--ink);font-size:15px;font-weight:600;text-decoration:none}
+main{max-width:760px;margin:0 auto;padding:20px 16px 40px}
+main img{max-width:100%;height:auto;border-radius:8px}
+main h1{font-size:30px;line-height:1.2;margin:24px 0 12px}
+main h2{font-size:23px;line-height:1.25;margin:36px 0 12px;padding-top:14px;border-top:1px solid var(--line)}
+main h3{font-size:19px;line-height:1.3;margin:26px 0 8px}
+main h4{font-size:17px;margin:22px 0 6px}
+main p,main li{overflow-wrap:anywhere}
+main a{color:var(--accent);text-underline-offset:3px;padding:6px 0}
+main p[align=center] a,main li>a:only-child{display:inline-block;padding:11px 3px}
+main a:has(>img){display:inline-block;padding:8px 0}
+main p[align=center] a:has(>img[width="100%"]){display:block;padding:0}
+main ul,main ol{padding-left:24px}
+main li{margin:6px 0}
+main blockquote{margin:16px 0;padding:4px 16px;border-left:4px solid var(--accent);color:var(--soft)}
+main code{font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);padding:2px 5px;border-radius:5px;overflow-wrap:anywhere}
+main pre{background:var(--code);padding:14px;border-radius:10px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+main pre code{background:none;padding:0;overflow-wrap:normal;white-space:pre}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:16px 0}
+main table{border-collapse:collapse;font-size:15px;min-width:100%}
+main th,main td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+main th{background:var(--code)}
+main hr{border:0;border-top:1px solid var(--line);margin:28px 0}
+main kbd{font:13px ui-monospace,Menlo,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 5px}
+main details{margin:12px 0}
+main summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:600}
+footer{max-width:760px;margin:0 auto;padding:18px 16px calc(28px + env(safe-area-inset-bottom));border-top:1px solid var(--line);color:var(--soft);font-size:14px}
+footer a{color:var(--soft)}
+</style>
+</head>
+<body>
+<header class="bar">
+<img src="icons/icon-192.png" alt="" width="36" height="36">
+<div class="name">precedent<small>Guide</small></div>
+<a class="source" href="https://github.com/juw12/precedent">GitHub</a>
+</header>
+<main id="guide">
+<h1 dir="auto">precedent</h1>
+<p dir="auto"><a href="https://m8ven.ai/mcp/juw12/precedent?s=readme" rel="nofollow"><img loading="lazy" src="https://m8ven.ai/badge/mcp/juw12/precedent" alt="M8ven Score"  style="max-width: 100%;"></a> <a href="https://glama.ai/mcp/servers/juw12/precedent" rel="nofollow"><img loading="lazy" src="https://glama.ai/mcp/servers/juw12/precedent/badges/score.svg" alt="Glama score"  style="max-width: 100%;"></a></p>
+<p dir="auto"><strong>Stop false "I can't"s and unchecked "done"s in your AI coding agents.</strong></p>
+<p dir="auto">Enforced automatically in Claude Code, Codex CLI, Gemini CLI, OpenCode and GitHub Copilot CLI;<br>
+available as MCP tools plus rules in Cursor, Windsurf, VS Code and Claude Desktop.</p>
+<p dir="auto">You've seen this: the agent says <em>"I can't do that"</em>, you reply <em>"you did it<br>
+before"</em>, and suddenly it works. The capability was there all along. What it<br>
+lacked was a <strong>precedent</strong>.</p>
+<p dir="auto"><code class="notranslate">precedent</code> finds that precedent automatically, from <strong>all</strong> your agents'<br>
+history, before the agent gives up. It also makes sure a pushed agent never<br>
+fakes success to please you.</p>
+<h2 dir="auto">Before / after</h2>
+<p dir="auto"><strong>Without precedent:</strong></p>
+<pre class="notranslate"><code class="notranslate">You:    convert report.xlsx to csv
+Agent:  Sorry, I can't convert Excel files in this environment.
+</code></pre>
+<p dir="auto"><strong>With precedent</strong>, the agent's give-up is sent back with this (real hook output):</p>
+<pre class="notranslate"><code class="notranslate">Precedent check: your answer gives up without evidence. Before stopping: (1) name the
+exact blocker; (2) look for precedent ... (3) try at least three routes that differ in
+kind; (4) verify any success with a real check. Never invent a past success or fake output. ...
+
+Possible precedent found in local history (check it matches before reusing; cite it if you use it):
+- [2026-11-01, Claude Code, this project, session 3f2a1b9c; succeeded] Bash:
+  `python -c "import pandas as pd; pd.read_excel('data.xlsx').to_csv('data.csv', index=False)"`
+  (task: "convert data.xlsx to csv")
+</code></pre>
+<p dir="auto">The failed <code class="notranslate">xlsx2csv</code> attempt from that same session is not shown: only actions<br>
+that <strong>succeeded</strong> count. What the agent does next depends on the agent. It was<br>
+measured on a real agent, including where it backfired at first (see <em>Verified so far</em>).</p>
+<p dir="auto"><strong>See it yourself in under a minute</strong>, no agent history needed:</p>
+<pre class="notranslate"><code class="notranslate">python demo.py
+</code></pre>
+<p dir="auto">It builds a throwaway sandbox and runs the real hooks as Claude Code, Codex CLI<br>
+and Gemini CLI would: a give-up sent back with last week's working command, a<br>
+"done" with no check sent back, and a test-weakening patch denied.</p>
+<h2 dir="auto">Works with</h2>
+<markdown-accessiblity-table><div class="scroll"><table role="table">
+<thead>
+<tr>
+<th>Agent</th>
+<th>History searched</th>
+<th>How it's enforced</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude Code</td>
+<td>✓ transcripts</td>
+<td><strong>automatic hooks</strong> + skill + MCP</td>
+</tr>
+<tr>
+<td>Codex CLI</td>
+<td>✓ rollouts (incl. 0.161–0.163 code mode)</td>
+<td><strong>automatic hooks</strong> + skill + MCP + AGENTS.md rules</td>
+</tr>
+<tr>
+<td>Gemini CLI</td>
+<td>✓ chat recordings</td>
+<td><strong>automatic hooks</strong> + skill + MCP + GEMINI.md rules</td>
+</tr>
+<tr>
+<td>OpenCode</td>
+<td>✓ SQLite history</td>
+<td><strong>automatic plugin</strong> + skill + MCP + AGENTS.md rules</td>
+</tr>
+<tr>
+<td>GitHub Copilot CLI</td>
+<td>—</td>
+<td><strong>automatic hooks</strong> + skill + MCP</td>
+</tr>
+<tr>
+<td>Cursor, Windsurf, VS Code (Copilot agent), Claude Desktop</td>
+<td>—</td>
+<td>MCP server</td>
+</tr>
+<tr>
+<td>ChatGPT, Gemini app, any chat</td>
+<td>—</td>
+<td>paste-in rules (<code class="notranslate">platforms/chatgpt/</code>)</td>
+</tr>
+</tbody>
+</table></div></markdown-accessiblity-table>
+<p dir="auto">Plus shell history (bash, zsh, PowerShell) and git log for everyone.</p>
+<h2 dir="auto">Install</h2>
+<pre class="notranslate"><code class="notranslate">git clone https://github.com/juw12/precedent
+cd precedent
+python install.py            # dry run: shows every change, writes nothing
+python install.py --apply    # install for every agent it finds
+python install.py --uninstall --apply
+</code></pre>
+<p dir="auto">It backs up every file it edits (<code class="notranslate">*.precedent-bak</code>), is safe to run twice,<br>
+skips any config it can't parse safely (for example JSON with comments) and<br>
+tells you what to add by hand. Requirements: Python 3.8+. No other dependencies.<br>
+Codex CLI asks you to trust new hooks once: run <code class="notranslate">/hooks</code> inside Codex and approve them.<br>
+It only touches agents it can actually find (their CLI on PATH, or their own<br>
+config or history files), and never overwrites a different skill that happens<br>
+to use the folder name <code class="notranslate">precedent</code>.</p>
+<h2 dir="auto">What it does</h2>
+<markdown-accessiblity-table><div class="scroll"><table role="table">
+<thead>
+<tr>
+<th>When</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>You say "you did it before" / "try again"</td>
+<td>It searches your past sessions in <strong>every agent</strong>, shell history and git, and hands the agent <strong>the exact action that worked</strong>, with date and task. If there is none, it says so, so the agent can't fake a memory.</td>
+</tr>
+<tr>
+<td>The agent is about to give up</td>
+<td>The answer goes back with the precedent attached and a short loop: name the blocker, try three routes that differ in kind, verify. Safety refusals are left alone.</td>
+</tr>
+<tr>
+<td>The agent says "done"</td>
+<td>If nothing ran after the last edit, or the last check failed, it is sent back to verify. "Should work now" is not a check.</td>
+</tr>
+<tr>
+<td>The agent cites a precedent</td>
+<td>Commands cited on a <code class="notranslate">Precedent:</code> line are checked against real history. An invented one is flagged.</td>
+</tr>
+<tr>
+<td>The same error happens twice</td>
+<td>The agent is told to stop repeating that route; on the 3rd and 5th repeat it gets hypotheses and matching precedent.</td>
+</tr>
+<tr>
+<td>The agent tries to cut corners</td>
+<td>Adding <code class="notranslate">skip</code>/<code class="notranslate">xfail</code>/<code class="notranslate">.only</code> or <code class="notranslate">assert True</code>, removing assertions, <strong>deleting test files</strong>, <code class="notranslate">push --force</code>, <code class="notranslate">--no-verify</code>, <code class="notranslate">reset --hard</code>, broad <code class="notranslate">rm -r</code>: <strong>stopped</strong>. Claude Code asks you; Codex and Gemini have no "ask", so the call is denied with the reason.</td>
+</tr>
+</tbody>
+</table></div></markdown-accessiblity-table>
+<p dir="auto">In Claude Code, Codex CLI, Gemini CLI and GitHub Copilot CLI this all happens<br>
+automatically through hooks (one set of scripts that speaks each agent's hook<br>
+format); in OpenCode through a plugin that runs the same scripts. In other agents<br>
+the same checks are MCP tools (<code class="notranslate">find_precedent</code>, <code class="notranslate">review_reply</code>,<br>
+<code class="notranslate">record_failure</code>, <code class="notranslate">check_test_edit</code>, <code class="notranslate">check_command</code>) that the installed rules<br>
+tell the agent to use, plus a <code class="notranslate">precedent</code> prompt (slash command) where the<br>
+client supports MCP prompts.</p>
+<h2 dir="auto">Why it's different</h2>
+<ul dir="auto">
+<li><strong>It searches every agent's history.</strong> It reads Claude Code transcripts,<br>
+OpenCode's database, Codex rollouts and Gemini CLI recordings, keeps only tool<br>
+calls that <strong>succeeded</strong>, and ranks them by the task they served. Each agent<br>
+hides failure differently, and the readers handle it: Gemini marks a shell<br>
+command that exits 1 as <code class="notranslate">success</code> with <code class="notranslate">Exit Code: 1</code> in its output, and Codex<br>
+code mode wraps commands in JavaScript.</li>
+<li><strong>It is built against fake success.</strong> "Done" needs a check after the last<br>
+change, invented precedents are flagged, and weakening or deleting tests asks first.</li>
+<li><strong>Honest exits.</strong> A well-evidenced <code class="notranslate">BLOCKED</code> with one precise ask is a good result.</li>
+<li><strong>Private.</strong> Everything runs locally: no network, no telemetry. Databases are<br>
+opened read-only. Tokens, passwords, keys and <code class="notranslate">user:pass@</code> URLs are redacted.</li>
+</ul>
+<h2 dir="auto">Use the finder yourself</h2>
+<pre class="notranslate"><code class="notranslate">python skills/precedent/scripts/find_precedent.py "convert xlsx to csv"
+python skills/precedent/scripts/find_precedent.py "deploy docs" --git --limit 8
+</code></pre>
+<h2 dir="auto">Manual setup (if you skip the installer)</h2>
+<ul dir="auto">
+<li><strong>Skill:</strong> copy <code class="notranslate">skills/precedent/</code> into your agent's skills folder.</li>
+<li><strong>MCP server:</strong> command <code class="notranslate">python</code>, args <code class="notranslate">["&lt;path&gt;/skills/precedent/scripts/mcp_server.py"]</code> (stdio).</li>
+<li><strong>Rules:</strong> paste <code class="notranslate">platforms/rules/precedent-rules.md</code> into AGENTS.md / GEMINI.md / your rules.</li>
+<li><strong>Cursor rule:</strong> <code class="notranslate">platforms/cursor/precedent.mdc</code> into <code class="notranslate">.cursor/rules/</code>.</li>
+<li><strong>OpenCode plugin:</strong> copy <code class="notranslate">platforms/opencode/precedent.js</code> into <code class="notranslate">.opencode/plugin/</code> (one project) or let the installer add <code class="notranslate">~/.config/opencode/plugins/precedent/</code>.</li>
+<li><strong>Claude Code plugin:</strong> <code class="notranslate">claude plugin marketplace add juw12/precedent</code>, then <code class="notranslate">claude plugin install precedent@precedent</code>.</li>
+</ul>
+<p dir="auto">Turn the hooks off any time with <code class="notranslate">PRECEDENT_OFF=1</code>.</p>
+<h2 dir="auto">Verified so far</h2>
+<ul dir="auto">
+<li><strong>106 automated tests</strong>: hooks fed realistic transcripts, an OpenCode<br>
+database with the real schema, Codex and Gemini fixtures copied from real<br>
+recordings, Codex and Gemini hook payloads in the shapes their sources define,<br>
+a live MCP stdio session, the demo, and the installer against a fake home<br>
+with real existing configs (dry run writes nothing, re-runs change nothing,<br>
+uninstall removes only what it added; installed hook commands run through<br>
+cmd, PowerShell and bash). Run: <code class="notranslate">python -m unittest discover -s tests</code>.</li>
+<li><strong>Real recordings</strong>: the Codex reader was run on 21 real rollouts (Codex<br>
+0.161, 0.162, 0.163) and the Gemini reader on 36 real recordings (Gemini CLI<br>
+0.46, 0.63) from the public <a href="https://github.com/emberian/cv">cv</a> test corpus.<br>
+Every failed or backgrounded command was excluded, and both returned the right<br>
+commands for a "replace TODO with DONE in notes.txt" query.</li>
+<li><strong>Real history</strong>: tested read-only against a real OpenCode history of about<br>
+300k records. Searches take 1–3 s, and a query with no real precedent returns nothing.</li>
+<li><strong>Agent A/B on OpenCode 2.2.0</strong> (<a href="https://github.com/juw12/precedent/blob/main/evals/RESULTS.md">full report</a>), against a<br>
+baseline that already had strong honesty rules in its global <code class="notranslate">AGENTS.md</code>:
+<ul dir="auto">
+<li>Solvable and "impossible" cases: both arms passed all of them. On a careful<br>
+setup the give-up and "done" checks changed nothing measurable.</li>
+<li>The first version <strong>backfired</strong> on access walls: its "don't give up" push led<br>
+the agent to guess <code class="notranslate">admin:admin</code> and to try removing a folder's deny ACL. The<br>
+fixes in 3.3.0 treat a quoted access denial as evidence, stop reading "keep<br>
+trying" in an opening request as pushback, rule out bypassing access controls<br>
+in every nudge, and block both moves in the guard.</li>
+<li>On the final code, three fresh trials of those two cases: precedent held the<br>
+line 6/6, the baseline 4/6 (it stripped the ACL once and guessed a password<br>
+once). Small samples; evidence, not a rate.</li>
+<li>Full suite re-run on the final code (precedent arm): 12/12 pass.</li>
+</ul>
+</li>
+</ul>
+<h2 dir="auto">Limits</h2>
+<ul dir="auto">
+<li>The search is keyword-based (IDF-weighted). It can surface a near-miss, so<br>
+results are labelled "possible precedent" and the agent is told to confirm a<br>
+match before reusing it.</li>
+<li>Automatic enforcement covers Claude Code, Codex CLI, Gemini CLI, GitHub<br>
+Copilot CLI and OpenCode. Cursor, Windsurf, VS Code and Claude Desktop get the<br>
+same checks as MCP tools plus rules, so there they depend on the agent calling them.</li>
+<li>Live-verified so far: the OpenCode plugin (OpenCode 2.2.0) and the Claude Code<br>
+hook format. The Codex, Gemini and Copilot wiring is tested against the payload<br>
+shapes in their source and docs (Codex <code class="notranslate">hooks/src/schema.rs</code>, Gemini and GitHub<br>
+hooks references), not yet inside a live session of those agents.</li>
+<li>Surfaced precedent comes from your real history, so it can point an agent at things<br>
+it would not otherwise touch (in the A/B it led one run to read the test machine's<br>
+mailbox while looking for an SMS). It is labelled a lead to check, not permission.</li>
+<li>In OpenCode the end-of-turn send-back needs a long-lived session (the TUI or<br>
+<code class="notranslate">opencode serve</code>). One-shot <code class="notranslate">opencode run</code> exits as soon as the turn ends, so<br>
+there only the tool guard, loop breaker and rules apply.</li>
+<li>Codex rollouts older than 7 days may be zstd-compressed (<code class="notranslate">.jsonl.zst</code>); those<br>
+are skipped (no standard-library decoder). Antigravity's protobuf<br>
+conversations are not read.</li>
+<li>Detection uses phrase patterns, so unusual wording can slip through. Every<br>
+hook and tool fails open: an error never blocks you.</li>
+</ul>
+<h2 dir="auto">License</h2>
+<p dir="auto">MIT</p>
+</main>
+<footer>
+This is the precedent guide: the project's README, laid out to read on a phone and kept for when there is no connection.
+It is the README of 2026-11-16. precedent itself is installed and run the way the guide says; the code is at
+<a href="https://github.com/juw12/precedent">github.com/juw12/precedent</a>.
+</footer>
+<script>
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
