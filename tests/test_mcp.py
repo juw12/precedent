@@ -16,6 +16,9 @@ class McpSession:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=env,
+            # The sandbox home, not this checkout: the server also searches the git log of its
+            # working folder, and a commit subject here must not answer a test query.
+            cwd=env["HOME"],
         )
         self.next_id = 0
 
